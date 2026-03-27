@@ -599,6 +599,35 @@ textarea { resize: vertical; min-height: 60px; }
   </div>
   <div class="screen-body">
 
+    <!-- Recuperar sesión anterior -->
+    <div class="card" id="card-recuperar" style="margin-bottom:0;">
+      <div style="display:flex;gap:0;border-radius:10px;overflow:hidden;border:1px solid var(--border);margin-bottom:20px;">
+        <button id="tab-nueva" onclick="switchModoProfe('nueva')"
+          style="flex:1;padding:12px;background:var(--blue);color:#000;border:none;cursor:pointer;font-family:Outfit,sans-serif;font-weight:700;font-size:0.85rem;transition:all 0.2s;">
+          ➕ Nueva sesión
+        </button>
+        <button id="tab-recuperar" onclick="switchModoProfe('recuperar')"
+          style="flex:1;padding:12px;background:var(--surface2);color:var(--muted);border:none;cursor:pointer;font-family:Outfit,sans-serif;font-weight:700;font-size:0.85rem;transition:all 0.2s;">
+          🔍 Recuperar sesión anterior
+        </button>
+      </div>
+
+      <!-- Panel recuperar -->
+      <div id="panel-recuperar" style="display:none;">
+        <div class="card-sub">Introduce el código de una sesión anterior para volver a ver sus resultados.</div>
+        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+          <div style="flex:1;min-width:200px;">
+            <label class="field-label">Código de sesión</label>
+            <input type="text" id="rec-codigo" placeholder="Ej: MDH-7DA" maxlength="7"
+              style="text-transform:uppercase;font-family:monospace;font-size:1.2rem;letter-spacing:0.15em;text-align:center;"
+              oninput="this.value=this.value.toUpperCase()">
+          </div>
+          <button class="btn btn-blue" onclick="recuperarSesion()" style="margin-bottom:1px;">Recuperar →</button>
+        </div>
+        <div id="rec-error" style="color:var(--red);font-size:0.78rem;margin-top:8px;display:none;"></div>
+      </div>
+    </div>
+
     <div class="card" id="card-config">
       <div class="card-title">⚙️ Configuración de la sesión</div>
       <div class="card-sub">Introduce los códigos del alumnado (ej: AL-001). Se almacenan de forma anónima.</div>
@@ -654,7 +683,8 @@ textarea { resize: vertical; min-height: 60px; }
         <div class="chips" id="chips-container"></div>
         <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-blue" onclick="verResultados()">Ver resultados →</button>
-          <button class="btn btn-ghost btn-sm" onclick="resetSesion()">🗑 Nueva sesión</button>
+          <button class="btn btn-ghost btn-sm" onclick="volverAlInicio()">↩ Cambiar sesión</button>
+          <button class="btn btn-ghost btn-sm" onclick="resetSesion()" style="color:var(--red);border-color:var(--red);">🗑 Borrar sesión</button>
         </div>
       </div>
     </div>
@@ -691,14 +721,12 @@ textarea { resize: vertical; min-height: 60px; }
     <!-- TAB ESTADÍSTICOS -->
     <div class="tab-panel" id="tp-estadisticos">
       <div class="card" style="margin-bottom:16px;">
-        <div class="card-title">🏷️ Distribución por categoría sociométrica</div>
-        <div class="card-sub">Clasificación del alumnado según su posición en la red de relaciones del grupo.</div>
-        <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;">
-          <div style="width:240px;height:240px;position:relative;flex-shrink:0;">
-            <canvas id="chart-categorias"></canvas>
-          </div>
-          <div id="cat-leyenda" style="flex:1;min-width:180px;display:flex;flex-direction:column;gap:8px;"></div>
-        </div>
+        <div class="card-title">👤 Ficha individual de alumno</div>
+        <div class="card-sub">Selecciona un alumno para ver todos sus datos sociométricos.</div>
+        <select id="ficha-sel" onchange="renderFicha()" style="max-width:280px;margin-bottom:14px;">
+          <option value="">— Selecciona un alumno —</option>
+        </select>
+        <div id="ficha-container"></div>
       </div>
       <div class="card" style="margin-bottom:16px;">
         <div class="card-title">📊 Elecciones positivas vs negativas recibidas</div>
@@ -761,14 +789,19 @@ textarea { resize: vertical; min-height: 60px; }
 
     <!-- TAB GRUPOS Y COHESIÓN -->
     <div class="tab-panel" id="tp-grupos">
-      <div style="margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <div style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <label class="field-label" style="margin:0;">Basado en:</label>
         <select id="grupos-preg-sel" style="max-width:280px;" onchange="renderGrupos()">
           <option value="0">✅ Tiempo libre positivo</option>
           <option value="2">👥 Trabajo en grupo positivo</option>
         </select>
       </div>
+      <!-- Análisis general del grupo -->
+      <div class="card" style="margin-bottom:16px;" id="grupo-general-card"></div>
+      <!-- Subgrupos -->
       <div id="grupos-container"></div>
+      <!-- Aislados y puentes -->
+      <div id="grupos-especiales"></div>
     </div>
 
     <!-- TAB BALANCE NETO -->
@@ -1024,6 +1057,59 @@ function genId() {
   return id;
 }
 
+function switchModoProfe(modo) {
+  const tabNueva = document.getElementById('tab-nueva');
+  const tabRec = document.getElementById('tab-recuperar');
+  const panelRec = document.getElementById('panel-recuperar');
+  const cardConf = document.getElementById('card-config');
+  if (modo === 'recuperar') {
+    tabNueva.style.background = 'var(--surface2)'; tabNueva.style.color = 'var(--muted)';
+    tabRec.style.background = 'var(--blue)'; tabRec.style.color = '#000';
+    panelRec.style.display = 'block';
+    cardConf.style.display = 'none';
+  } else {
+    tabNueva.style.background = 'var(--blue)'; tabNueva.style.color = '#000';
+    tabRec.style.background = 'var(--surface2)'; tabRec.style.color = 'var(--muted)';
+    panelRec.style.display = 'none';
+    cardConf.style.display = 'block';
+  }
+}
+
+async function recuperarSesion() {
+  const cod = document.getElementById('rec-codigo').value.trim().toUpperCase();
+  const err = document.getElementById('rec-error');
+  err.style.display = 'none';
+  if (!cod || cod.length < 7) { err.textContent = 'Introduce un código válido.'; err.style.display = 'block'; return; }
+  try {
+    const doc = await db.collection('sesiones').doc(cod).get();
+    if (!doc.exists) { err.textContent = 'Sesión no encontrada. Verifica el código.'; err.style.display = 'block'; return; }
+    const data = doc.data();
+    sesion = { id: cod, codigos: data.codigos, abierta: data.abierta };
+    respuestas = {};
+    document.getElementById('sesion-code-display').textContent = cod;
+    document.getElementById('card-recuperar').style.display = 'none';
+    document.getElementById('card-config').style.display = 'none';
+    document.getElementById('card-sesion-activa').style.display = 'block';
+    document.getElementById('profe-status').style.display = 'flex';
+    updateStatusUI(data.abierta);
+    startListening();
+    showToast('Sesión recuperada: ' + cod);
+  } catch(e) {
+    err.textContent = 'Error de conexión. Inténtalo de nuevo.';
+    err.style.display = 'block';
+  }
+}
+
+function volverAlInicio() {
+  if (pollUnsub) { pollUnsub(); pollUnsub = null; }
+  sesion = null; respuestas = {};
+  document.getElementById('card-recuperar').style.display = 'block';
+  document.getElementById('card-config').style.display = 'block';
+  document.getElementById('card-sesion-activa').style.display = 'none';
+  document.getElementById('profe-status').style.display = 'none';
+  switchModoProfe('nueva');
+}
+
 async function crearSesion() {
   const codigos = getCodigos();
   const sesionId = genId();
@@ -1036,6 +1122,7 @@ async function crearSesion() {
   });
 
   document.getElementById('sesion-code-display').textContent = sesionId;
+  document.getElementById('card-recuperar').style.display = 'none';
   document.getElementById('card-config').style.display = 'none';
   document.getElementById('card-sesion-activa').style.display = 'block';
   document.getElementById('profe-status').style.display = 'flex';
@@ -1073,9 +1160,11 @@ async function resetSesion() {
   if (sesion) await db.collection('sesiones').doc(sesion.id).delete();
   if (pollUnsub) { pollUnsub(); pollUnsub = null; }
   sesion = null; respuestas = {};
+  document.getElementById('card-recuperar').style.display = 'block';
   document.getElementById('card-config').style.display = 'block';
   document.getElementById('card-sesion-activa').style.display = 'none';
   document.getElementById('profe-status').style.display = 'none';
+  switchModoProfe('nueva');
   buildCodesGrid();
 }
 
@@ -1526,17 +1615,17 @@ INSTRUCCIONES DE FORMATO (MUY IMPORTANTES):
 - Usa los códigos (AL-001 etc.) como identificadores. Los nombres reales los tiene el profesor`;
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const GEMINI_KEY = 'AIzaSyA199DOXeVIDCka0eNjJFCqQao5HG_iNys';
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
-        messages: [{ role: 'user', content: prompt }]
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 2000, temperature: 0.7 }
       })
     });
     const data = await response.json();
-    informeTexto = data.content.map(b => b.text||'').join('');
+    informeTexto = data.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('') || 'No se pudo generar el informe.';
 
     // Renderizar con secciones destacadas
     output.innerHTML = informeTexto.split('\n').map(line => {
@@ -1657,14 +1746,14 @@ function renderGrupos() {
   const arr = getEleccionesPregunta(pregIdx);
   const n = arr.length;
   const codigos = sesion.codigos;
-  const cont = document.getElementById('grupos-container');
-  cont.innerHTML = '';
+  document.getElementById('grupos-container').innerHTML = '';
+  document.getElementById('grupos-especiales').innerHTML = '';
 
-  // Detectar grupos: componentes conexas usando elecciones recíprocas
+  // ── Detectar subgrupos por elecciones MUTUAS (recíprocas) ──
   const visited = new Array(n).fill(false);
-  const grupos = [];
+  const subgrupos = [];
 
-  function bfs(start) {
+  function bfsRecip(start) {
     const grupo = [];
     const queue = [start];
     visited[start] = true;
@@ -1673,9 +1762,8 @@ function renderGrupos() {
       grupo.push(node);
       for (let j = 0; j < n; j++) {
         if (!visited[j]) {
-          // Conexión si hay al menos una elección en cualquier dirección
-          const conectado = (arr[node]||[]).includes(j) || (arr[j]||[]).includes(node);
-          if (conectado) { visited[j] = true; queue.push(j); }
+          const reciproca = (arr[node]||[]).includes(j) && (arr[j]||[]).includes(node);
+          if (reciproca) { visited[j] = true; queue.push(j); }
         }
       }
     }
@@ -1683,96 +1771,146 @@ function renderGrupos() {
   }
 
   for (let i = 0; i < n; i++) {
-    if (!visited[i]) {
-      const g = bfs(i);
-      grupos.push(g);
+    if (!visited[i]) subgrupos.push(bfsRecip(i));
+  }
+  subgrupos.sort((a,b) => b.length - a.length);
+
+  const subgruposReales = subgrupos.filter(g => g.length > 1);
+  const aislados = subgrupos.filter(g => g.length === 1).map(g => g[0]);
+
+  // ── Detectar alumnos puente ──
+  // Un alumno es puente si tiene elecciones (no recíprocas) hacia miembros de distintos subgrupos
+  const getGrupoIdx = (i) => subgruposReales.findIndex(g => g.includes(i));
+  const puentes = [];
+  codigos.forEach((_, i) => {
+    const miGrupo = getGrupoIdx(i);
+    const conectados = new Set();
+    (arr[i]||[]).forEach(j => {
+      const gj = getGrupoIdx(j);
+      if (gj !== -1 && gj !== miGrupo) conectados.add(gj);
+    });
+    (arr.map((e,j)=>e.includes(i)?j:-1).filter(j=>j>=0)).forEach(j => {
+      const gj = getGrupoIdx(j);
+      if (gj !== -1 && gj !== miGrupo) conectados.add(gj);
+    });
+    if (conectados.size >= 2 || (miGrupo === -1 && conectados.size >= 1)) {
+      puentes.push({ i, grupos: conectados.size + (miGrupo !== -1 ? 1 : 0) });
     }
+  });
+
+  // ── Densidad general de la red ──
+  const totalEnlaces = arr.reduce((s,e) => s + e.length, 0);
+  const enlacesPosibles = n * (n - 1);
+  const densidad = enlacesPosibles > 0 ? Math.round((totalEnlaces / enlacesPosibles) * 100) : 0;
+  let totalRecip = 0;
+  arr.forEach((elecs,i) => elecs.forEach(j => { if((arr[j]||[]).includes(i)) totalRecip++; }));
+  totalRecip = Math.round(totalRecip / 2);
+  const densidadLabel = densidad >= 40 ? {txt:'Alta', color:'var(--green)'} : densidad >= 20 ? {txt:'Media', color:'var(--orange)'} : {txt:'Baja', color:'var(--red)'};
+
+  // ── CARD: Análisis general del grupo ──
+  const cardGeneral = document.getElementById('grupo-general-card');
+  cardGeneral.innerHTML = `
+    <div class="card-title" style="margin-bottom:12px;">🌐 Análisis general del grupo</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:14px;">
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;text-align:center;">
+        <div style="font-size:1.8rem;font-weight:800;color:${densidadLabel.color};">${densidad}%</div>
+        <div style="font-size:0.7rem;color:var(--muted);margin-top:2px;">Densidad de la red</div>
+        <div style="font-size:0.65rem;color:${densidadLabel.color};font-weight:600;">${densidadLabel.txt}</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;text-align:center;">
+        <div style="font-size:1.8rem;font-weight:800;color:var(--blue);">${totalRecip}</div>
+        <div style="font-size:0.7rem;color:var(--muted);margin-top:2px;">Elecciones recíprocas</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;text-align:center;">
+        <div style="font-size:1.8rem;font-weight:800;color:var(--purple);">${subgruposReales.length}</div>
+        <div style="font-size:0.7rem;color:var(--muted);margin-top:2px;">Subgrupos detectados</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;text-align:center;">
+        <div style="font-size:1.8rem;font-weight:800;color:var(--orange);">${aislados.length}</div>
+        <div style="font-size:0.7rem;color:var(--muted);margin-top:2px;">Alumnos sin subgrupo</div>
+      </div>
+    </div>
+    <div style="font-size:0.78rem;color:var(--muted);line-height:1.6;padding:10px;background:var(--surface2);border-radius:8px;">
+      ${densidad >= 40 ? 'La clase presenta una red de relaciones <strong>densa y activa</strong>, con muchas conexiones entre el alumnado.' :
+        densidad >= 20 ? 'La clase presenta una red de relaciones de <strong>densidad media</strong>. Existen grupos bien definidos pero también zonas de menor conexión.' :
+        'La clase presenta una red de relaciones <strong>poco densa</strong>. Hay pocas conexiones generales, lo que puede indicar fragmentación o escasa cohesión de grupo.'}
+      ${totalRecip > n ? ' El número de elecciones recíprocas es alto, indicando vínculos de amistad consolidados.' : ''}
+    </div>`;
+
+  // ── CARDS: Subgrupos ──
+  const cont = document.getElementById('grupos-container');
+  if (subgruposReales.length === 0) {
+    cont.innerHTML = '<div class="card" style="color:var(--muted);font-size:0.85rem;">No se detectan subgrupos con elecciones recíprocas. Prueba a cambiar la pregunta de referencia.</div>';
   }
 
-  // Ordenar grupos por tamaño
-  grupos.sort((a, b) => b.length - a.length);
-
-  // Calcular cohesión de cada grupo: enlaces reales / enlaces posibles
-  grupos.forEach((grupo, gi) => {
+  subgruposReales.forEach((grupo, gi) => {
     const m = grupo.length;
-    if (m === 0) return;
-    const posibles = m * (m - 1); // dirigido
-    let enlaces = 0, reciprocas = 0;
+    // Cohesión interna: recíprocas dentro del grupo / pares posibles
+    let recInternas = 0, elecInternas = 0;
     grupo.forEach(i => grupo.forEach(j => {
-      if (i === j) return;
+      if (i===j) return;
       if ((arr[i]||[]).includes(j)) {
-        enlaces++;
-        if ((arr[j]||[]).includes(i)) reciprocas++;
+        elecInternas++;
+        if ((arr[j]||[]).includes(i)) recInternas++;
       }
     }));
-    reciprocas = reciprocas / 2; // cada recíproca se cuenta dos veces
-    const cohesion = posibles > 0 ? Math.round((enlaces / posibles) * 100) : 0;
-    const cohesionLabel = cohesion >= 60 ? { txt: 'Alta', color: 'var(--green)' }
-      : cohesion >= 30 ? { txt: 'Media', color: 'var(--orange)' }
-      : { txt: 'Baja', color: 'var(--red)' };
+    recInternas = Math.round(recInternas / 2);
+    const cohesion = m > 1 ? Math.round((recInternas / (m*(m-1)/2)) * 100) : 0;
+    const cl = cohesion >= 60 ? {txt:'Alta',color:'var(--green)'} : cohesion >= 30 ? {txt:'Media',color:'var(--orange)'} : {txt:'Baja',color:'var(--red)'};
+    const esPuente = grupo.filter(i => puentes.find(p=>p.i===i));
 
-    const isAislado = m === 1;
     const card = document.createElement('div');
     card.className = 'card';
-    card.style.marginBottom = '12px';
-    card.style.borderLeft = `3px solid ${isAislado ? 'var(--muted)' : cohesionLabel.color}`;
-
-    const titulo = isAislado
-      ? `<span style="color:var(--muted);">🔘 Alumno sin conexiones</span>`
-      : `<span>👥 Grupo ${gi + 1}</span> <span style="font-size:0.75rem;font-weight:400;color:var(--muted);">${m} miembros</span>`;
-
-    const miembros = grupo.map(i => `<span style="background:var(--surface2);border-radius:6px;padding:2px 8px;font-size:0.75rem;font-family:monospace;">${codigos[i]}</span>`).join(' ');
-
+    card.style.cssText = `margin-bottom:12px;border-left:3px solid ${cl.color};`;
     card.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-        <div class="card-title" style="margin-bottom:0;">${titulo}</div>
-        ${!isAislado ? `<div style="display:flex;gap:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
+        <div class="card-title" style="margin-bottom:0;">👥 Subgrupo ${gi+1} <span style="font-weight:400;font-size:0.78rem;color:var(--muted);">${m} miembros</span></div>
+        <div style="display:flex;gap:14px;">
           <div style="text-align:center;">
-            <div style="font-size:1.4rem;font-weight:800;color:${cohesionLabel.color};">${cohesion}%</div>
-            <div style="font-size:0.68rem;color:var(--muted);">Cohesión ${cohesionLabel.txt}</div>
+            <div style="font-size:1.3rem;font-weight:800;color:${cl.color};">${cohesion}%</div>
+            <div style="font-size:0.65rem;color:var(--muted);">Cohesión ${cl.txt}</div>
           </div>
           <div style="text-align:center;">
-            <div style="font-size:1.4rem;font-weight:800;color:var(--blue);">${reciprocas}</div>
-            <div style="font-size:0.68rem;color:var(--muted);">Recíprocas</div>
+            <div style="font-size:1.3rem;font-weight:800;color:var(--blue);">${recInternas}</div>
+            <div style="font-size:0.65rem;color:var(--muted);">Vínculos recíprocos</div>
           </div>
-          <div style="text-align:center;">
-            <div style="font-size:1.4rem;font-weight:800;color:var(--purple);">${enlaces}</div>
-            <div style="font-size:0.68rem;color:var(--muted);">Total vínculos</div>
-          </div>
-        </div>` : ''}
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:5px;">${miembros}</div>
-      ${!isAislado ? `<div style="margin-top:10px;">
-        <div class="prog-bar-bg" style="height:5px;">
-          <div class="prog-bar" style="width:${cohesion}%;background:${cohesionLabel.color};"></div>
         </div>
-      </div>` : ''}`;
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;">
+        ${grupo.map(i => `<span style="background:var(--surface2);border-radius:6px;padding:3px 9px;font-size:0.75rem;font-family:monospace;border:1px solid ${cl.color}44;">${codigos[i]}</span>`).join('')}
+      </div>
+      <div class="prog-bar-bg" style="height:4px;"><div class="prog-bar" style="width:${cohesion}%;background:${cl.color};"></div></div>
+      ${esPuente.length ? `<div style="margin-top:8px;font-size:0.72rem;color:var(--orange);">🌉 Puente hacia otros grupos: ${esPuente.map(p=>codigos[p.i]).join(', ')}</div>` : ''}`;
     cont.appendChild(card);
   });
 
-  // Resumen global
-  const gruposReales = grupos.filter(g => g.length > 1);
-  const aislados = grupos.filter(g => g.length === 1).length;
-  const cohesionMedia = gruposReales.length > 0
-    ? Math.round(gruposReales.reduce((acc, grupo) => {
-        const posibles = grupo.length * (grupo.length - 1);
-        let enlaces = 0;
-        grupo.forEach(i => grupo.forEach(j => { if (i!==j && (arr[i]||[]).includes(j)) enlaces++; }));
-        return acc + (posibles > 0 ? enlaces/posibles : 0);
-      }, 0) / gruposReales.length * 100)
-    : 0;
+  // ── Aislados y puentes ──
+  const esp = document.getElementById('grupos-especiales');
+  if (aislados.length > 0) {
+    const cardAis = document.createElement('div');
+    cardAis.className = 'card';
+    cardAis.style.cssText = 'margin-bottom:12px;border-left:3px solid var(--muted);';
+    cardAis.innerHTML = `
+      <div class="card-title" style="margin-bottom:8px;">🔘 Alumnos sin subgrupo <span style="font-weight:400;font-size:0.78rem;color:var(--muted);">${aislados.length} alumnos</span></div>
+      <div class="card-sub" style="margin-bottom:8px;">No tienen ninguna elección recíproca. Pueden estar eligiendo pero no siendo elegidos de vuelta, o estar en situación de aislamiento real.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;">
+        ${aislados.map(i => `<span style="background:var(--surface2);border-radius:6px;padding:3px 9px;font-size:0.75rem;font-family:monospace;border:1px solid var(--border);">${codigos[i]}</span>`).join('')}
+      </div>`;
+    esp.appendChild(cardAis);
+  }
 
-  const resumen = document.createElement('div');
-  resumen.className = 'card';
-  resumen.style.cssText = 'background:var(--surface2);margin-bottom:12px;';
-  resumen.innerHTML = `
-    <div class="card-title" style="margin-bottom:10px;">📊 Resumen de la clase</div>
-    <div style="display:flex;gap:20px;flex-wrap:wrap;">
-      <div style="text-align:center;"><div style="font-size:1.6rem;font-weight:800;color:var(--blue);">${gruposReales.length}</div><div style="font-size:0.72rem;color:var(--muted);">Grupos detectados</div></div>
-      <div style="text-align:center;"><div style="font-size:1.6rem;font-weight:800;color:var(--orange);">${aislados}</div><div style="font-size:0.72rem;color:var(--muted);">Sin conexiones</div></div>
-      <div style="text-align:center;"><div style="font-size:1.6rem;font-weight:800;color:var(--green);">${cohesionMedia}%</div><div style="font-size:0.72rem;color:var(--muted);">Cohesión media</div></div>
-    </div>`;
-  cont.insertBefore(resumen, cont.firstChild);
+  if (puentes.length > 0) {
+    const cardPuente = document.createElement('div');
+    cardPuente.className = 'card';
+    cardPuente.style.cssText = 'border-left:3px solid var(--orange);';
+    cardPuente.innerHTML = `
+      <div class="card-title" style="margin-bottom:8px;">🌉 Alumnos puente entre grupos <span style="font-weight:400;font-size:0.78rem;color:var(--muted);">${puentes.length} alumnos</span></div>
+      <div class="card-sub" style="margin-bottom:8px;">Tienen conexiones con miembros de distintos subgrupos. Son clave para la cohesión global de la clase.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;">
+        ${puentes.map(p => `<span style="background:rgba(210,153,34,0.1);border-radius:6px;padding:3px 9px;font-size:0.75rem;font-family:monospace;border:1px solid var(--orange)44;color:var(--orange);">${codigos[p.i]}</span>`).join('')}
+      </div>`;
+    esp.appendChild(cardPuente);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1880,38 +2018,14 @@ function renderEstadisticos() {
   const netos = codigos.map((_, i) => posRec[i] - negRec[i]);
   const cats = codigos.map((_, i) => categorizarAlumno(netos[i], posRec[i], negRec[i], n));
 
-  // ── GRÁFICO 1: DONUT CATEGORÍAS ──────────────────────────────
-  destroyChart('categorias');
-  const catCount = {};
-  cats.forEach(c => { catCount[c.label] = (catCount[c.label]||0) + 1; });
-  const catLabels = Object.keys(catCount);
-  const catColors = catLabels.map(l => cats.find(c=>c.label===l).color);
-  const ctx1 = document.getElementById('chart-categorias').getContext('2d');
-  chartInstances['categorias'] = new Chart(ctx1, {
-    type: 'doughnut',
-    data: {
-      labels: catLabels,
-      datasets: [{ data: catLabels.map(l=>catCount[l]), backgroundColor: catColors, borderColor: '#161b22', borderWidth: 3 }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: true,
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw} alumno/as` } }
-      },
-      cutout: '62%'
-    }
-  });
+  // Poblar selector de ficha
+  const fichaSel = document.getElementById('ficha-sel');
+  if (fichaSel) {
+    fichaSel.innerHTML = '<option value="">— Selecciona un alumno —</option>';
+    codigos.forEach((cod,i) => { fichaSel.innerHTML += `<option value="${i}">${cod}</option>`; });
+  }
 
-  const ley = document.getElementById('cat-leyenda');
-  ley.innerHTML = catLabels.map((l,i) => `
-    <div style="display:flex;align-items:center;gap:8px;">
-      <div style="width:11px;height:11px;border-radius:50%;background:${catColors[i]};flex-shrink:0;"></div>
-      <span style="font-size:0.8rem;font-weight:600;">${l}</span>
-      <span style="font-size:0.8rem;color:var(--muted);margin-left:auto;">${catCount[l]} alumno${catCount[l]!==1?'s':''}</span>
-    </div>`).join('');
-
-  // ── GRÁFICO 2: BARRAS APILADAS POS vs NEG ────────────────────
+  // ── GRÁFICO 1: BARRAS APILADAS POS vs NEG ────────────────────
   destroyChart('barras');
   // Ordenar por neto desc
   const orden = codigos.map((_,i)=>i).sort((a,b)=>netos[b]-netos[a]);
@@ -1984,6 +2098,121 @@ function renderEstadisticos() {
   });
 }
 
+
+function renderFicha() {
+  if (!sesion) return;
+  const idx = parseInt(document.getElementById('ficha-sel').value);
+  const cont = document.getElementById('ficha-container');
+  if (isNaN(idx) || idx === -1 || document.getElementById('ficha-sel').value === '') {
+    cont.innerHTML = '';
+    return;
+  }
+  const codigos = sesion.codigos;
+  const cod = codigos[idx];
+  const n = codigos.length;
+
+  // Calcular datos del alumno
+  const posRec = new Array(n).fill(0);
+  const negRec = new Array(n).fill(0);
+  let posEm = 0, negEm = 0;
+  const eligePos = [], eligeNeg = [];
+  const eligidoPor = [], rechazadoPor = [];
+  const justs = [];
+
+  PREGUNTAS_SOCIO.forEach((p, pi) => {
+    const arr = getEleccionesPregunta(pi);
+    arr.forEach((elecs, i) => {
+      elecs.forEach(j => {
+        if (p.tipo==='pos') posRec[j]++;
+        else negRec[j]++;
+      });
+    });
+    // Elecciones emitidas por este alumno
+    const r = respuestas[cod];
+    if (r && r[p.id]) {
+      const elecs = r[p.id].elecciones || [];
+      const js = r[p.id].justificaciones || [];
+      elecs.forEach((j, ei) => {
+        const just = (js[ei]||'').trim();
+        if (p.tipo==='pos') { eligePos.push({cod:codigos[j], just}); posEm++; }
+        else { eligeNeg.push({cod:codigos[j], just}); negEm++; }
+      });
+    }
+    // Quién elige a este alumno
+    arr.forEach((elecs, i) => {
+      if (i===idx) return;
+      if (elecs.includes(idx)) {
+        const r2 = respuestas[codigos[i]];
+        const data2 = r2 ? r2[p.id] : null;
+        const eiAlumno = elecs.indexOf(idx);
+        const justRecib = data2 ? ((data2.justificaciones||[])[eiAlumno]||'').trim() : '';
+        if (p.tipo==='pos') eligidoPor.push({cod:codigos[i], just:justRecib});
+        else rechazadoPor.push({cod:codigos[i], just:justRecib});
+      }
+    });
+  });
+
+  const neto = posRec[idx] - negRec[idx];
+  const cat = categorizarAlumno(neto, posRec[idx], negRec[idx], n);
+  const netoColor = neto > 0 ? 'var(--green)' : neto < 0 ? 'var(--red)' : 'var(--muted)';
+
+  const mkChip = (c, color='var(--surface2)', border='var(--border)') =>
+    `<span style="background:${color};border:1px solid ${border};border-radius:6px;padding:2px 8px;font-size:0.74rem;font-family:monospace;">${c}</span>`;
+
+  const mkJustRow = (item, color) => `
+    <div style="display:flex;gap:8px;align-items:baseline;margin-bottom:4px;">
+      ${mkChip(item.cod, color+'22', color+'44')}
+      ${item.just ? `<span style="font-size:0.74rem;color:var(--muted);font-style:italic;">"${item.just}"</span>` : ''}
+    </div>`;
+
+  cont.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px;margin-bottom:16px;">
+      <div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:1.6rem;font-weight:800;color:var(--green);">${posRec[idx]}</div>
+        <div style="font-size:0.65rem;color:var(--muted);">Pos. recibidas</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:1.6rem;font-weight:800;color:var(--red);">${negRec[idx]}</div>
+        <div style="font-size:0.65rem;color:var(--muted);">Neg. recibidas</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:1.6rem;font-weight:800;color:${netoColor};">${neto>0?'+':''}${neto}</div>
+        <div style="font-size:0.65rem;color:var(--muted);">Índice neto</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:1.6rem;font-weight:800;color:var(--blue);">${posEm}</div>
+        <div style="font-size:0.65rem;color:var(--muted);">Pos. emitidas</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:1.6rem;font-weight:800;color:var(--orange);">${negEm}</div>
+        <div style="font-size:0.65rem;color:var(--muted);">Neg. emitidas</div>
+      </div>
+      <div style="background:${cat.color}18;border:1px solid ${cat.color}44;border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:0.78rem;font-weight:700;color:${cat.color};">${cat.label}</div>
+        <div style="font-size:0.62rem;color:var(--muted);">Categoría</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      <div>
+        <div style="font-size:0.72rem;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Elige positivamente a:</div>
+        ${eligePos.length ? eligePos.map(x=>mkJustRow(x,'#3fb950')).join('') : '<span style="font-size:0.75rem;color:var(--muted);">Sin datos</span>'}
+      </div>
+      <div>
+        <div style="font-size:0.72rem;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Rechaza a:</div>
+        ${eligeNeg.length ? eligeNeg.map(x=>mkJustRow(x,'#f85149')).join('') : '<span style="font-size:0.75rem;color:var(--muted);">Sin datos</span>'}
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div>
+        <div style="font-size:0.72rem;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Le eligen positivamente:</div>
+        ${eligidoPor.length ? eligidoPor.map(x=>mkJustRow(x,'#58a6ff')).join('') : '<span style="font-size:0.75rem;color:var(--muted);">Nadie</span>'}
+      </div>
+      <div>
+        <div style="font-size:0.72rem;font-weight:700;color:var(--orange);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Le rechazan:</div>
+        ${rechazadoPor.length ? rechazadoPor.map(x=>mkJustRow(x,'#d29922')).join('') : '<span style="font-size:0.75rem;color:var(--muted);">Nadie</span>'}
+      </div>
+    </div>`;
+}
 
 const tabActions = {
   sociograma: () => setTimeout(renderGrafo, 30),
