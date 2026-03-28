@@ -735,6 +735,7 @@ textarea { resize: vertical; min-height: 60px; }
       <div class="tab" onclick="switchResTab('justificaciones')">Justificaciones</div>
       <div class="tab" onclick="switchResTab('matriz')">Matriz</div>
       <div class="tab" onclick="switchResTab('informe')">Informe IA</div>
+      <div class="tab" onclick="switchResTab('comparar')">⚖️ Comparar</div>
     </div>
 
     <!-- TAB ESTADÍSTICOS -->
@@ -889,6 +890,46 @@ textarea { resize: vertical; min-height: 60px; }
         </div>
       </div>
       <div id="informe-output" style="display:none;"></div>
+    </div>
+
+    <!-- TAB COMPARAR SESIONES -->
+    <div class="tab-panel" id="tp-comparar">
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-title">⚖️ Comparar con sesión anterior</div>
+        <div class="card-sub">Introduce el código y PIN de una sesión anterior del mismo grupo para analizar la evolución.</div>
+        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+          <div style="flex:2;min-width:150px;">
+            <label class="field-label">Código sesión anterior</label>
+            <input type="text" id="cmp-codigo" placeholder="Ej: ABC-123" maxlength="7"
+              style="text-transform:uppercase;font-family:monospace;font-size:1.1rem;letter-spacing:0.12em;text-align:center;"
+              oninput="this.value=this.value.toUpperCase()">
+          </div>
+          <div style="flex:1;min-width:120px;">
+            <label class="field-label">PIN del profesor</label>
+            <input type="password" id="cmp-pin" placeholder="Tu PIN" maxlength="12"
+              style="font-family:monospace;font-size:1rem;text-align:center;">
+          </div>
+          <button class="btn btn-blue" onclick="cargarComparacion()">Comparar →</button>
+        </div>
+        <div id="cmp-error" style="color:var(--red);font-size:0.78rem;margin-top:8px;display:none;"></div>
+      </div>
+      <div id="cmp-resultado" style="display:none;">
+        <div class="card" style="margin-bottom:14px;" id="cmp-general"></div>
+        <div class="card" style="margin-bottom:14px;" id="cmp-categorias"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+          <div class="card" id="cmp-mejoran"></div>
+          <div class="card" id="cmp-empeoran"></div>
+        </div>
+        <div class="card" style="margin-bottom:14px;" id="cmp-subgrupos"></div>
+        <div class="card" style="margin-bottom:14px;" id="cmp-tabla"></div>
+        <div class="card">
+          <div class="card-title">🤖 Informe comparativo con IA</div>
+          <div class="card-sub">Análisis narrativo de la evolución del grupo entre las dos sesiones.</div>
+          <button class="btn btn-blue btn-sm" id="btn-informe-cmp" onclick="generarInformeComparativo()">✨ Generar informe comparativo</button>
+          <div id="cmp-informe-output" style="display:none;margin-top:14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:0.85rem;line-height:1.75;"></div>
+          <button class="btn btn-ghost btn-sm" id="btn-pdf-cmp" onclick="descargarPDFComparativo()" style="display:none;margin-top:10px;">📄 Descargar PDF comparativo</button>
+        </div>
+      </div>
     </div>
 
   </div>
@@ -1743,81 +1784,66 @@ INSTRUCCIONES DE FORMATO (MUY IMPORTANTES):
 
 function descargarPDF() {
   if (!informeTexto) return;
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const pageW = doc.internal.pageSize.getWidth();
-  const margin = 20;
-  const maxW = pageW - margin * 2;
-  let y = margin;
+  const fecha = new Date().toLocaleDateString('es-ES');
+  const sesionId = sesion?.id || '';
+  const nAlumnos = sesion?.codigos?.length || 0;
 
-  // Cabecera
-  doc.setFillColor(22, 27, 34);
-  doc.rect(0, 0, pageW, 30, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.setTextColor(88, 166, 255);
-  doc.text('INFORME SOCIOMÉTRICO', margin, 14);
-  doc.setFontSize(9);
-  doc.setTextColor(125, 133, 144);
-  doc.text(`Sesión: ${sesion?.id||''} · Fecha: ${new Date().toLocaleDateString('es-ES')} · Alumnado: ${sesion?.codigos?.length||0}`, margin, 22);
-  y = 40;
-
-  const lines = informeTexto.split('\n');
-  lines.forEach(line => {
-    const isTitle = /^[A-ZÁÉÍÓÚÑ\s]{5,}:/.test(line.trim()) && line.trim().length < 80;
+  // Convertir texto a HTML con estilos para impresión
+  const htmlLineas = informeTexto.split('\n').map(line => {
+    const isTitle = /^[\d\.\s]*[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\.\d]{3,}:/.test(line.trim()) && line.trim().length < 100;
     const isTablaRow = line.includes('|') && line.trim().length > 3;
-    if (line.trim() === '') { y += 3; return; }
-    if (y > 270) { doc.addPage(); y = margin; }
-
-    if (isTitle) {
-      y += 4;
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(30, 80, 140);
-      doc.text(line.trim(), margin, y);
-      doc.setDrawColor(88, 166, 255);
-      doc.setLineWidth(0.3);
-      doc.line(margin, y+1.5, pageW-margin, y+1.5);
-      y += 8;
-    } else if (isTablaRow) {
-      // Renderizar fila de tabla en PDF
+    if (line.trim() === '') return '<div style="height:8px"></div>';
+    if (isTitle) return `<h2 style="font-family:Arial,sans-serif;font-size:12pt;font-weight:bold;color:#1e4080;margin:18pt 0 4pt;padding-bottom:3pt;border-bottom:1px solid #4472C4;page-break-after:avoid;">${line.trim()}</h2>`;
+    if (isTablaRow) {
       const cells = line.split('|').map(c => c.trim());
-      const isHeader = cells.some(c => /\(\+\)|\(\-\)/.test(c));
-      const colW = maxW / cells.length;
-      if (y > 272) { doc.addPage(); y = margin; }
-      if (isHeader) {
-        doc.setFillColor(240, 245, 255);
-        doc.rect(margin, y-3.5, maxW, 6, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.5);
-        doc.setTextColor(30, 80, 140);
-      } else {
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.5);
-        doc.setTextColor(40, 40, 40);
-      }
-      cells.forEach((cell, ci) => {
-        doc.text(cell.substring(0,18), margin + ci * colW + 1, y);
-      });
-      doc.setDrawColor(200, 210, 230);
-      doc.setLineWidth(0.1);
-      doc.line(margin, y+2, margin+maxW, y+2);
-      y += 5.5;
-    } else {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(40, 40, 40);
-      const wrapped = doc.splitTextToSize(line.trim(), maxW);
-      wrapped.forEach(wl => {
-        if (y > 275) { doc.addPage(); y = margin; }
-        doc.text(wl, margin, y);
-        y += 5.5;
-      });
-      y += 1;
+      const isHeader = cells.some(c => /\(\+\)|\(\-\)/.test(c)) || (cells[0] && cells[0].toUpperCase()===cells[0] && cells[0].length>2);
+      const tdStyle = isHeader
+        ? 'background:#dce6f1;font-weight:bold;font-size:8pt;padding:3pt 5pt;border:1px solid #aaa;'
+        : 'font-size:8pt;padding:3pt 5pt;border:1px solid #ccc;';
+      return `<tr>${cells.map(c=>`<td style="${tdStyle}">${c}</td>`).join('')}</tr>`;
     }
+    return `<p style="font-family:Arial,sans-serif;font-size:10pt;line-height:1.6;margin:0 0 6pt;text-align:justify;">${line.trim()}</p>`;
   });
 
-  doc.save(`sociograma_informe_${sesion?.id||''}.pdf`);
+  // Agrupar filas de tabla
+  let htmlFinal = '';
+  let enTabla = false;
+  htmlLineas.forEach(h => {
+    if (h.startsWith('<tr>')) {
+      if (!enTabla) { htmlFinal += '<table style="width:100%;border-collapse:collapse;margin:8pt 0;">'; enTabla = true; }
+      htmlFinal += h;
+    } else {
+      if (enTabla) { htmlFinal += '</table>'; enTabla = false; }
+      htmlFinal += h;
+    }
+  });
+  if (enTabla) htmlFinal += '</table>';
+
+  const htmlCompleto = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+  <title>Informe Sociométrico ${sesionId}</title>
+  <style>
+    @page { size: A4; margin: 20mm 20mm 20mm 20mm; }
+    body { font-family: Arial, sans-serif; font-size: 10pt; color: #222; margin: 0; padding: 0; }
+    .cabecera { border-bottom: 3px solid #1e4080; padding-bottom: 10pt; margin-bottom: 16pt; }
+    .cab-titulo { font-size: 16pt; font-weight: bold; color: #1e4080; }
+    .cab-sub { font-size: 9pt; color: #666; margin-top: 4pt; }
+    h2 { page-break-after: avoid; }
+    table { page-break-inside: auto; }
+    tr { page-break-inside: avoid; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+  </head><body>
+  <div class="cabecera">
+    <div class="cab-titulo">INFORME SOCIOMÉTRICO</div>
+    <div class="cab-sub">Sesión: ${sesionId} &nbsp;·&nbsp; Fecha: ${fecha} &nbsp;·&nbsp; Alumnado: ${nAlumnos} &nbsp;·&nbsp; Departamento de Orientación</div>
+  </div>
+  ${htmlFinal}
+  </body></html>`;
+
+  const ventana = window.open('', '_blank');
+  ventana.document.write(htmlCompleto);
+  ventana.document.close();
+  setTimeout(() => ventana.print(), 600);
 }
 
 function descargarDOCX() {
@@ -2443,6 +2469,367 @@ function renderFicha() {
     </div>`;
 }
 
+// ══════════════════════════════════════════════════════════════════
+// COMPARAR SESIONES
+// ══════════════════════════════════════════════════════════════════
+let sesionAnterior = null;
+let respuestasAnterior = {};
+let informeComparativoTexto = '';
+
+async function cargarComparacion() {
+  const cod = document.getElementById('cmp-codigo').value.trim().toUpperCase();
+  const pin = document.getElementById('cmp-pin').value.trim();
+  const err = document.getElementById('cmp-error');
+  err.style.display = 'none';
+
+  if (!cod || cod.length < 7) { err.textContent = 'Introduce un código válido.'; err.style.display = 'block'; return; }
+  if (!pin || pin.length < 4) { err.textContent = 'Introduce tu PIN.'; err.style.display = 'block'; return; }
+  if (!sesion) { err.textContent = 'Primero debes tener una sesión activa (la más reciente).'; err.style.display = 'block'; return; }
+
+  try {
+    const docRef = await db.collection('sesiones').doc(cod).get();
+    if (!docRef.exists) { err.textContent = 'Sesión anterior no encontrada.'; err.style.display = 'block'; return; }
+    const data = docRef.data();
+
+    // Verificar PIN
+    if (data.pinHash) {
+      const pinH = await hashPin(pin);
+      if (pinH !== data.pinHash) { err.textContent = 'PIN incorrecto.'; err.style.display = 'block'; return; }
+    }
+
+    sesionAnterior = { id: cod, codigos: data.codigos };
+    // Cargar respuestas de sesión anterior
+    const snap = await db.collection('sesiones').doc(cod).collection('respuestas').get();
+    respuestasAnterior = {};
+    snap.forEach(d => { respuestasAnterior[d.id] = d.data(); });
+
+    document.getElementById('cmp-resultado').style.display = 'block';
+    renderComparacion();
+  } catch(e) {
+    err.textContent = 'Error de conexión: ' + e.message;
+    err.style.display = 'block';
+  }
+}
+
+function calcVotosParaSesion(codigos, respSesion) {
+  const n = codigos.length;
+  const posRec = new Array(n).fill(0);
+  const negRec = new Array(n).fill(0);
+  const posEm = new Array(n).fill(0);
+  const negEm = new Array(n).fill(0);
+
+  PREGUNTAS_SOCIO.forEach((p, pi) => {
+    // Construir array de elecciones para esta sesión
+    const arr = codigos.map((cod, i) => {
+      const r = respSesion[cod];
+      if (!r || !r[p.id]) return [];
+      return (r[p.id].elecciones || []).filter(j => j >= 0 && j < n);
+    });
+    arr.forEach((elecs, i) => {
+      if (p.tipo === 'pos') posEm[i] += elecs.length;
+      else negEm[i] += elecs.length;
+      elecs.forEach(j => { if (p.tipo==='pos') posRec[j]++; else negRec[j]++; });
+    });
+  });
+  return { posRec, negRec, posEm, negEm };
+}
+
+function calcSubgruposParaSesion(codigos, respSesion) {
+  const n = codigos.length;
+  const arr = codigos.map((cod, i) => {
+    const r = respSesion[cod];
+    if (!r || !r['tl_pos']) return [];
+    return (r['tl_pos'].elecciones || []).filter(j => j >= 0 && j < n);
+  });
+  const visited = new Array(n).fill(false);
+  const sgs = [];
+  const bfs = (s) => {
+    const g=[], q=[s]; visited[s]=true;
+    while(q.length){const nd=q.shift();g.push(nd);for(let j=0;j<n;j++){if(!visited[j]&&(arr[nd]||[]).includes(j)&&(arr[j]||[]).includes(nd)){visited[j]=true;q.push(j);}}}
+    return g;
+  };
+  for(let i=0;i<n;i++) if(!visited[i]) sgs.push(bfs(i));
+  return sgs;
+}
+
+function calcDensidad(codigos, respSesion) {
+  const n = codigos.length;
+  let total = 0;
+  codigos.forEach(cod => {
+    const r = respSesion[cod];
+    if (!r) return;
+    PREGUNTAS_SOCIO.forEach(p => {
+      if (p.tipo !== 'pos') return;
+      total += (r[p.id]?.elecciones||[]).length;
+    });
+  });
+  return n > 1 ? Math.round(total / (n*(n-1)) * 100) : 0;
+}
+
+function renderComparacion() {
+  // Usar los mismos códigos de la sesión actual (mismo grupo)
+  const codigos = sesion.codigos;
+  const n = codigos.length;
+
+  // Calcular datos de ambas sesiones
+  const actual = calcVotosParaSesion(codigos, respuestas);
+  const anterior = calcVotosParaSesion(sesionAnterior.codigos.length === n ? sesionAnterior.codigos : codigos, respuestasAnterior);
+  const densActual = calcDensidad(codigos, respuestas);
+  const densAnterior = calcDensidad(codigos.length === sesionAnterior.codigos.length ? sesionAnterior.codigos : codigos, respuestasAnterior);
+  const sgActual = calcSubgruposParaSesion(codigos, respuestas);
+  const sgAnterior = calcSubgruposParaSesion(codigos, respuestasAnterior);
+  const nResp1 = Object.keys(respuestasAnterior).length;
+  const nResp2 = Object.keys(respuestas).length;
+
+  // ── RESUMEN GENERAL ──
+  const dDens = densActual - densAnterior;
+  const sgRealesA = sgAnterior.filter(g=>g.length>1).length;
+  const sgRealesB = sgActual.filter(g=>g.length>1).length;
+  const aisA = sgAnterior.filter(g=>g.length===1).length;
+  const aisB = sgActual.filter(g=>g.length===1).length;
+
+  document.getElementById('cmp-general').innerHTML = `
+    <div class="card-title" style="margin-bottom:12px;">🌐 Evolución general del grupo</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;">
+      ${mkCmpCard('Densidad de red', densAnterior+'%', densActual+'%', dDens)}
+      ${mkCmpCard('Subgrupos', sgRealesA, sgRealesB, sgRealesB-sgRealesA)}
+      ${mkCmpCard('Sin subgrupo', aisA, aisB, -(aisB-aisA))}
+      ${mkCmpCard('Respondieron', nResp1, nResp2, nResp2-nResp1)}
+    </div>`;
+
+  // ── CATEGORÍAS ──
+  const catsA = codigos.map((_,i) => categorizarAlumno(anterior.posRec[i]-anterior.negRec[i], anterior.posRec[i], anterior.negRec[i], n));
+  const catsB = codigos.map((_,i) => categorizarAlumno(actual.posRec[i]-actual.negRec[i], actual.posRec[i], actual.negRec[i], n));
+  const cambios = codigos.map((cod,i) => ({ cod, catA: catsA[i].label, catB: catsB[i].label, cambio: catsA[i].label !== catsB[i].label }));
+  const conCambio = cambios.filter(c => c.cambio);
+
+  let catHtml = '<div class="card-title" style="margin-bottom:10px;">🏷️ Cambios de categoría sociométrica</div>';
+  if (conCambio.length === 0) {
+    catHtml += '<p style="color:var(--muted);font-size:0.82rem;">Ningún alumno cambió de categoría entre las dos sesiones.</p>';
+  } else {
+    catHtml += `<p style="font-size:0.78rem;color:var(--muted);margin-bottom:10px;">${conCambio.length} alumno${conCambio.length!==1?'s':''} cambiaron de categoría.</p>`;
+    catHtml += conCambio.map(c => {
+      const mejoró = ['Estrella social','Bien integrado/a'].includes(c.catB) && !['Estrella social','Bien integrado/a'].includes(c.catA);
+      const empeoró = ['Rechazado/a','En riesgo','Aislado/a'].includes(c.catB) && !['Rechazado/a','En riesgo','Aislado/a'].includes(c.catA);
+      const arrow = mejoró ? '↑' : empeoró ? '↓' : '→';
+      const color = mejoró ? 'var(--green)' : empeoró ? 'var(--red)' : 'var(--orange)';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:var(--surface2);border-radius:8px;margin-bottom:5px;">
+        <span style="font-family:monospace;font-weight:700;font-size:0.78rem;min-width:70px;">${c.cod}</span>
+        <span style="font-size:0.75rem;color:var(--muted);">${c.catA}</span>
+        <span style="color:${color};font-weight:800;font-size:1rem;">${arrow}</span>
+        <span style="font-size:0.75rem;color:${color};font-weight:600;">${c.catB}</span>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('cmp-categorias').innerHTML = catHtml;
+
+  // ── MEJORAN / EMPEORAN ──
+  const deltas = codigos.map((cod,i) => ({
+    cod,
+    netoA: anterior.posRec[i]-anterior.negRec[i],
+    netoB: actual.posRec[i]-actual.negRec[i],
+    delta: (actual.posRec[i]-actual.negRec[i]) - (anterior.posRec[i]-anterior.negRec[i]),
+    posA: anterior.posRec[i], negA: anterior.negRec[i],
+    posB: actual.posRec[i], negB: actual.negRec[i]
+  })).sort((a,b) => b.delta-a.delta);
+
+  const mkDeltaRow = (x) => {
+    const color = x.delta > 0 ? 'var(--green)' : x.delta < 0 ? 'var(--red)' : 'var(--muted)';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:var(--surface2);border-radius:6px;margin-bottom:4px;">
+      <span style="font-family:monospace;font-weight:700;font-size:0.75rem;min-width:65px;">${x.cod}</span>
+      <span style="font-size:0.7rem;color:var(--muted);">neto: ${x.netoA>0?'+':''}${x.netoA} → ${x.netoB>0?'+':''}${x.netoB}</span>
+      <span style="margin-left:auto;font-weight:800;color:${color};">${x.delta>0?'+':''}${x.delta}</span>
+    </div>`;
+  };
+
+  document.getElementById('cmp-mejoran').innerHTML = `
+    <div class="card-title" style="margin-bottom:8px;color:var(--green);">↑ Mayor aceptación</div>
+    <div class="card-sub" style="margin-bottom:8px;">Alumnos que subieron su índice neto</div>
+    ${deltas.filter(x=>x.delta>0).slice(0,5).map(mkDeltaRow).join('') || '<p style="color:var(--muted);font-size:0.78rem;">Ninguno</p>'}`;
+
+  document.getElementById('cmp-empeoran').innerHTML = `
+    <div class="card-title" style="margin-bottom:8px;color:var(--red);">↓ Mayor rechazo</div>
+    <div class="card-sub" style="margin-bottom:8px;">Alumnos que bajaron su índice neto</div>
+    ${[...deltas].reverse().filter(x=>x.delta<0).slice(0,5).map(mkDeltaRow).join('') || '<p style="color:var(--muted);font-size:0.78rem;">Ninguno</p>'}`;
+
+  // ── SUBGRUPOS ──
+  let sgHtml = '<div class="card-title" style="margin-bottom:10px;">👥 Evolución de subgrupos</div>';
+  sgHtml += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">`;
+  const mkSgCard = (label, sgs, cods) => {
+    const reales = sgs.filter(g=>g.length>1);
+    const ais = sgs.filter(g=>g.length===1);
+    return `<div>
+      <div style="font-size:0.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">${label}</div>
+      ${reales.map((g,gi) => {
+        let recip=0, pos=g.length*(g.length-1)/2;
+        const arrG = cods.map((c,i)=>{ const r=label.includes('Anterior')?respuestasAnterior[c]:respuestas[c]; return r&&r['tl_pos']?(r['tl_pos'].elecciones||[]).filter(j=>j>=0&&j<cods.length):[];});
+        g.forEach(i=>g.forEach(j=>{if(i<j&&(arrG[i]||[]).includes(j)&&(arrG[j]||[]).includes(i))recip++;}));
+        const coh = pos>0?Math.round(recip/pos*100):0;
+        const cl = coh>=60?'var(--green)':coh>=30?'var(--orange)':'var(--red)';
+        return `<div style="background:var(--surface2);border-radius:8px;padding:8px 10px;margin-bottom:6px;border-left:3px solid ${cl};">
+          <div style="font-size:0.75rem;font-weight:700;margin-bottom:3px;">Subgrupo ${gi+1} · ${g.length} miembros · <span style="color:${cl};">${coh}%</span></div>
+          <div style="font-size:0.68rem;color:var(--muted);font-family:monospace;">${g.map(i=>cods[i]).join(', ')}</div>
+        </div>`;
+      }).join('')}
+      ${ais.length ? `<div style="font-size:0.72rem;color:var(--muted);margin-top:4px;">Sin subgrupo: ${ais.map(g=>cods[g[0]]).join(', ')}</div>` : ''}
+    </div>`;
+  };
+  sgHtml += mkSgCard('📅 Sesión anterior', sgAnterior, codigos);
+  sgHtml += mkSgCard('📅 Sesión actual', sgActual, codigos);
+  sgHtml += '</div>';
+  document.getElementById('cmp-subgrupos').innerHTML = sgHtml;
+
+  // ── TABLA COMPLETA ──
+  let tHtml = '<div class="card-title" style="margin-bottom:10px;">📋 Tabla comparativa completa</div>';
+  tHtml += '<div style="overflow:auto;"><table class="just-table"><thead><tr>';
+  tHtml += '<th>Código</th><th style="color:var(--muted);">Pos ant.</th><th style="color:var(--muted);">Neg ant.</th><th style="color:var(--muted);">Neto ant.</th>';
+  tHtml += '<th style="color:var(--blue);">Pos act.</th><th style="color:var(--blue);">Neg act.</th><th style="color:var(--blue);">Neto act.</th><th>Δ Neto</th><th>Cambio cat.</th></tr></thead><tbody>';
+  deltas.forEach(x => {
+    const color = x.delta>0?'var(--green)':x.delta<0?'var(--red)':'var(--muted)';
+    const cambio = cambios.find(c=>c.cod===x.cod);
+    tHtml += `<tr>
+      <td><strong style="font-family:monospace;">${x.cod}</strong></td>
+      <td style="text-align:center;color:var(--muted);">${x.posA}</td>
+      <td style="text-align:center;color:var(--muted);">${x.negA}</td>
+      <td style="text-align:center;color:var(--muted);">${x.netoA>0?'+':''}${x.netoA}</td>
+      <td style="text-align:center;color:var(--green);font-weight:600;">${x.posB}</td>
+      <td style="text-align:center;color:var(--red);font-weight:600;">${x.negB}</td>
+      <td style="text-align:center;color:var(--blue);font-weight:600;">${x.netoB>0?'+':''}${x.netoB}</td>
+      <td style="text-align:center;font-weight:800;color:${color};">${x.delta>0?'+':''}${x.delta}</td>
+      <td style="font-size:0.72rem;">${cambio&&cambio.cambio?`${cambio.catA} → ${cambio.catB}`:'-'}</td>
+    </tr>`;
+  });
+  tHtml += '</tbody></table></div>';
+  document.getElementById('cmp-tabla').innerHTML = tHtml;
+}
+
+function mkCmpCard(label, valA, valB, delta) {
+  const color = delta > 0 ? 'var(--green)' : delta < 0 ? 'var(--red)' : 'var(--muted)';
+  const arrow = delta > 0 ? '↑' : delta < 0 ? '↓' : '→';
+  return `<div style="background:var(--surface2);border-radius:8px;padding:12px;text-align:center;">
+    <div style="font-size:0.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">${label}</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:8px;">
+      <span style="font-size:1rem;color:var(--muted);">${valA}</span>
+      <span style="color:${color};font-weight:800;font-size:1.1rem;">${arrow}</span>
+      <span style="font-size:1.2rem;font-weight:800;color:${color};">${valB}</span>
+    </div>
+    <div style="font-size:0.7rem;color:${color};font-weight:600;margin-top:3px;">${delta>0?'+':''}${delta !== 0 ? delta : 'sin cambio'}</div>
+  </div>`;
+}
+
+async function generarInformeComparativo() {
+  if (!sesion || !sesionAnterior) return;
+  const btn = document.getElementById('btn-informe-cmp');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Analizando evolución...';
+  const output = document.getElementById('cmp-informe-output');
+  output.style.display = 'block';
+  output.innerHTML = '<span style="color:var(--muted);">Generando informe comparativo...</span>';
+
+  const codigos = sesion.codigos;
+  const n = codigos.length;
+  const actual = calcVotosParaSesion(codigos, respuestas);
+  const anterior = calcVotosParaSesion(codigos, respuestasAnterior);
+  const densA = calcDensidad(codigos, respuestasAnterior);
+  const densB = calcDensidad(codigos, respuestas);
+  const sgA = calcSubgruposParaSesion(codigos, respuestasAnterior).filter(g=>g.length>1);
+  const sgB = calcSubgruposParaSesion(codigos, respuestas).filter(g=>g.length>1);
+  const catsA = codigos.map((_,i) => categorizarAlumno(anterior.posRec[i]-anterior.negRec[i], anterior.posRec[i], anterior.negRec[i], n));
+  const catsB = codigos.map((_,i) => categorizarAlumno(actual.posRec[i]-actual.negRec[i], actual.posRec[i], actual.negRec[i], n));
+  const deltas = codigos.map((cod,i)=>({cod, delta:(actual.posRec[i]-actual.negRec[i])-(anterior.posRec[i]-anterior.negRec[i]), catA:catsA[i].label, catB:catsB[i].label})).sort((a,b)=>b.delta-a.delta);
+  const cambiosCat = deltas.filter(x=>x.catA!==x.catB);
+
+  const prompt = `Eres un orientador/a escolar experto/a. Redacta un INFORME COMPARATIVO SOCIOMÉTRICO profesional en español analizando la evolución de un grupo entre dos sesiones.
+
+SESIÓN ANTERIOR (${sesionAnterior.id}):
+- Densidad de red: ${densA}%
+- Subgrupos: ${sgA.length}
+- Sin subgrupo: ${calcSubgruposParaSesion(codigos, respuestasAnterior).filter(g=>g.length===1).length} alumnos
+
+SESIÓN ACTUAL (${sesion.id}):
+- Densidad de red: ${densB}%
+- Subgrupos: ${sgB.length}
+- Sin subgrupo: ${calcSubgruposParaSesion(codigos, respuestas).filter(g=>g.length===1).length} alumnos
+
+CAMBIOS DE CATEGORÍA (${cambiosCat.length} alumnos):
+${cambiosCat.map(x=>`- ${x.cod}: ${x.catA} → ${x.catB}`).join('\n') || 'Ninguno'}
+
+TOP 5 MEJORAS DE ÍNDICE NETO:
+${deltas.filter(x=>x.delta>0).slice(0,5).map(x=>`- ${x.cod}: +${x.delta} puntos`).join('\n') || 'Ninguno'}
+
+TOP 5 EMPEORAMIENTOS:
+${[...deltas].reverse().filter(x=>x.delta<0).slice(0,5).map(x=>`- ${x.cod}: ${x.delta} puntos`).join('\n') || 'Ninguno'}
+
+ESTRUCTURA DEL INFORME (títulos en MAYÚSCULAS):
+1. INTRODUCCIÓN:
+Contexto de la comparación, sesiones comparadas, objetivo del análisis.
+
+2. EVOLUCIÓN GENERAL DEL GRUPO:
+Cambios en densidad, subgrupos, cohesión general. ¿El grupo mejoró o empeoró en conjunto?
+
+3. ALUMNOS CON MEJORA SIGNIFICATIVA:
+Análisis de los alumnos que más mejoraron. ¿Qué puede explicar la mejora?
+
+4. ALUMNOS EN SITUACIÓN DE RIESGO PERSISTENTE O NUEVO:
+Alumnos que empeoraron o siguen en situación difícil. Especial atención a cambios de categoría negativos.
+
+5. VALORACIÓN Y RECOMENDACIONES:
+Una o dos recomendaciones concretas basadas en la evolución observada.
+
+NORMAS: texto plano sin asteriscos ni markdown, tono profesional y descriptivo, cita los códigos de alumno.`;
+
+  try {
+    const GEMINI_KEY = 'TU_CLAVE_GEMINI_AQUI';
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: 2000, temperature: 0.6 } })
+    });
+    const data = await response.json();
+    informeComparativoTexto = data.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('') || 'No se pudo generar.';
+
+    output.innerHTML = informeComparativoTexto.split('\n').map(line => {
+      const isTitle = /^[A-ZÁÉÍÓÚÑ\s\.\d]{5,}:/.test(line.trim()) && line.trim().length < 100;
+      if (isTitle) return `<div style="font-family:'Fraunces',serif;font-size:1rem;font-weight:700;color:var(--blue);margin-top:20px;margin-bottom:5px;padding-bottom:3px;border-bottom:1px solid var(--border);">${line}</div>`;
+      if (line.trim()==='') return '<div style="height:6px;"></div>';
+      return `<p style="margin-bottom:7px;line-height:1.75;">${line}</p>`;
+    }).join('');
+
+    document.getElementById('btn-pdf-cmp').style.display = 'inline-flex';
+  } catch(e) {
+    output.innerHTML = '<span style="color:var(--red);">Error al generar. Verifica la conexión.</span>';
+  }
+  btn.disabled = false;
+  btn.innerHTML = '✨ Generar informe comparativo';
+}
+
+function descargarPDFComparativo() {
+  if (!informeComparativoTexto) return;
+  const fecha = new Date().toLocaleDateString('es-ES');
+  const htmlLineas = informeComparativoTexto.split('\n').map(line => {
+    const isTitle = /^[A-ZÁÉÍÓÚÑ\s\.\d]{5,}:/.test(line.trim()) && line.trim().length < 100;
+    if (line.trim() === '') return '<div style="height:8px"></div>';
+    if (isTitle) return `<h2 style="font-family:Arial;font-size:12pt;font-weight:bold;color:#1e4080;margin:18pt 0 4pt;padding-bottom:3pt;border-bottom:1px solid #4472C4;">${line.trim()}</h2>`;
+    return `<p style="font-family:Arial;font-size:10pt;line-height:1.6;margin:0 0 6pt;text-align:justify;">${line.trim()}</p>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+  <title>Informe Comparativo</title>
+  <style>@page{size:A4;margin:20mm} body{font-family:Arial;font-size:10pt;color:#222;} h2{page-break-after:avoid;}
+  @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}</style>
+  </head><body>
+  <div style="border-bottom:3px solid #1e4080;padding-bottom:10pt;margin-bottom:16pt;">
+    <div style="font-size:16pt;font-weight:bold;color:#1e4080;">INFORME COMPARATIVO SOCIOMÉTRICO</div>
+    <div style="font-size:9pt;color:#666;margin-top:4pt;">Sesión anterior: ${sesionAnterior?.id||''} · Sesión actual: ${sesion?.id||''} · Fecha: ${fecha}</div>
+  </div>
+  ${htmlLineas}</body></html>`;
+
+  const v = window.open('', '_blank');
+  v.document.write(html);
+  v.document.close();
+  setTimeout(() => v.print(), 600);
+}
+
 const tabActions = {
   sociograma: () => setTimeout(renderGrafo, 30),
   estadisticos: renderEstadisticos,
@@ -2452,12 +2839,13 @@ const tabActions = {
   roles: renderRoles,
   justificaciones: renderJust,
   matriz: renderMatriz,
-  informe: () => {}
+  informe: () => {},
+  comparar: () => {}
 };
 
 function switchResTab(name) {
   document.querySelectorAll('#res-tabs .tab').forEach((t,i) => {
-    const map = ['sociograma','estadisticos','riesgo','grupos','balance','roles','justificaciones','matriz','informe'];
+    const map = ['sociograma','estadisticos','riesgo','grupos','balance','roles','justificaciones','matriz','informe','comparar'];
     t.classList.toggle('active', map[i]===name);
   });
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
