@@ -614,13 +614,19 @@ textarea { resize: vertical; min-height: 60px; }
 
       <!-- Panel recuperar -->
       <div id="panel-recuperar" style="display:none;">
-        <div class="card-sub">Introduce el código de una sesión anterior para volver a ver sus resultados.</div>
+        <div class="card-sub">Introduce el código de sesión y tu PIN de profesor para acceder a los resultados.</div>
         <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
-          <div style="flex:1;min-width:200px;">
+          <div style="flex:2;min-width:160px;">
             <label class="field-label">Código de sesión</label>
             <input type="text" id="rec-codigo" placeholder="Ej: MDH-7DA" maxlength="7"
-              style="text-transform:uppercase;font-family:monospace;font-size:1.2rem;letter-spacing:0.15em;text-align:center;"
+              style="text-transform:uppercase;font-family:monospace;font-size:1.1rem;letter-spacing:0.15em;text-align:center;"
               oninput="this.value=this.value.toUpperCase()">
+          </div>
+          <div style="flex:1;min-width:100px;">
+            <label class="field-label">PIN del profesor</label>
+            <input type="password" id="rec-pin" placeholder="Ej: Ab3x9Z" maxlength="12"
+              style="font-family:monospace;font-size:1.1rem;letter-spacing:0.2em;text-align:center;"
+              >
           </div>
           <button class="btn btn-blue" onclick="recuperarSesion()" style="margin-bottom:1px;">Recuperar →</button>
         </div>
@@ -653,9 +659,17 @@ textarea { resize: vertical; min-height: 60px; }
       <label class="field-label">Códigos del alumnado (edita si quieres personalizarlos)</label>
       <div class="codes-grid" id="codes-grid"></div>
 
-      <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-blue" onclick="crearSesion()">Crear sesión →</button>
-        <button class="btn btn-ghost btn-sm" onclick="imprimirTabla()">🖨️ Imprimir tabla equivalencias</button>
+      <div style="margin-top:16px;">
+        <label class="field-label">PIN del profesor (mín. 6 caracteres alfanuméricos) — solo tú lo sabrás</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="password" id="p-pin" placeholder="Ej: Ab3x9Z" maxlength="12"
+            style="max-width:120px;font-family:monospace;font-size:1.2rem;letter-spacing:0.2em;text-align:center;"
+            >
+          <button class="btn btn-blue" onclick="crearSesion()">Crear sesión →</button>
+          <button class="btn btn-ghost btn-sm" onclick="imprimirTabla()">🖨️ Imprimir tabla</button>
+        </div>
+        <div style="font-size:0.72rem;color:var(--muted);margin-top:5px;">⚠️ Guarda este PIN junto al código de sesión. Mínimo 6 caracteres, combina letras y números.</div>
+        <div id="pin-error" style="color:var(--red);font-size:0.78rem;margin-top:4px;display:none;"></div>
       </div>
     </div>
 
@@ -666,8 +680,13 @@ textarea { resize: vertical; min-height: 60px; }
         <div class="card-sub">Comparte este código con el alumnado. Cada alumno lo introduce en la pantalla de inicio.</div>
         <div class="session-box">
           <div>
+            <div style="font-size:0.68rem;color:#7d8590;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Código para alumnos</div>
             <div class="session-code-display" id="sesion-code-display">—</div>
-            <div class="session-hint">Los alumnos usan su código personal AL-001, AL-002... para identificarse</div>
+            <div class="session-hint" style="margin-top:8px;">
+              <span style="color:#7d8590;">PIN del profesor:</span>
+              <span id="pin-display" style="font-family:monospace;color:#d29922;font-weight:700;letter-spacing:0.15em;margin-left:6px;">****</span>
+              <button onclick="togglePinVisible()" style="background:none;border:none;cursor:pointer;color:#7d8590;font-size:0.75rem;margin-left:6px;">👁</button>
+            </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:8px;">
             <button class="btn btn-ghost btn-sm" onclick="copiarCodigo()">📋 Copiar código</button>
@@ -961,7 +980,7 @@ textarea { resize: vertical; min-height: 60px; }
 // FIREBASE
 // ══════════════════════════════════════════════════════════════════
 const firebaseConfig = {
-  apiKey: "AIzaSyD0GYaAsgHiZqGEJegwMYVP-mzIagxf7Qo",
+  apiKey: "AIzaSyAQgn0KH4P_2XY3QYbbX8UVXnP3hjIEjY8",
   authDomain: "sociograma-clase.firebaseapp.com",
   projectId: "sociograma-clase",
   storageBucket: "sociograma-clase.firebasestorage.app",
@@ -1077,16 +1096,30 @@ function switchModoProfe(modo) {
 
 async function recuperarSesion() {
   const cod = document.getElementById('rec-codigo').value.trim().toUpperCase();
+  const pin = document.getElementById('rec-pin').value.trim();
   const err = document.getElementById('rec-error');
   err.style.display = 'none';
-  if (!cod || cod.length < 7) { err.textContent = 'Introduce un código válido.'; err.style.display = 'block'; return; }
+  if (!cod || cod.length < 7) { err.textContent = 'Introduce un código de sesión válido.'; err.style.display = 'block'; return; }
+  if (!pin || pin.length < 6) { err.textContent = 'Introduce tu PIN (mínimo 6 caracteres).'; err.style.display = 'block'; return; }
   try {
     const doc = await db.collection('sesiones').doc(cod).get();
     if (!doc.exists) { err.textContent = 'Sesión no encontrada. Verifica el código.'; err.style.display = 'block'; return; }
     const data = doc.data();
+    // Verificar PIN
+    if (data.pinHash) {
+      const pinIntroducido = await hashPin(pin);
+      if (pinIntroducido !== data.pinHash) {
+        err.textContent = 'PIN incorrecto. Acceso denegado.';
+        err.style.display = 'block';
+        return;
+      }
+    }
+    pinActual = pin;
     sesion = { id: cod, codigos: data.codigos, abierta: data.abierta };
     respuestas = {};
     document.getElementById('sesion-code-display').textContent = cod;
+    document.getElementById('pin-display').textContent = '****';
+    pinVisible = false;
     document.getElementById('card-recuperar').style.display = 'none';
     document.getElementById('card-config').style.display = 'none';
     document.getElementById('card-sesion-activa').style.display = 'block';
@@ -1110,18 +1143,45 @@ function volverAlInicio() {
   switchModoProfe('nueva');
 }
 
+async function hashPin(pin) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+let pinActual = '';
+let pinVisible = false;
+
+function togglePinVisible() {
+  pinVisible = !pinVisible;
+  const el = document.getElementById('pin-display');
+  if (el) el.textContent = pinVisible ? pinActual : '****';
+}
+
 async function crearSesion() {
+  const pinErr = document.getElementById('pin-error');
+  pinErr.style.display = 'none';
+  const pin = document.getElementById('p-pin').value.trim();
+  if (!pin || pin.length < 6) {
+    pinErr.textContent = 'El PIN debe tener al menos 6 caracteres.';
+    pinErr.style.display = 'block';
+    return;
+  }
   const codigos = getCodigos();
   const sesionId = genId();
+  const pinHash = await hashPin(pin);
+  pinActual = pin;
   sesion = { id: sesionId, codigos, abierta: true };
 
   await db.collection('sesiones').doc(sesionId).set({
     codigos,
     abierta: true,
+    pinHash,
     creado: firebase.firestore.FieldValue.serverTimestamp()
   });
 
   document.getElementById('sesion-code-display').textContent = sesionId;
+  document.getElementById('pin-display').textContent = '****';
+  pinVisible = false;
   document.getElementById('card-recuperar').style.display = 'none';
   document.getElementById('card-config').style.display = 'none';
   document.getElementById('card-sesion-activa').style.display = 'block';
