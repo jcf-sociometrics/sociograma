@@ -1900,45 +1900,69 @@ function descargarPDF() {
   const top5RiesgoG = [...datosG].sort((a,b)=>a.neto-b.neto).slice(0,5);
   const maxValG = Math.max(...datosG.map(x=>Math.max(x.pos,x.neg)), 1);
 
-  function mkBarChart(items, titulo, colorP, colorN, maxV) {
-    const labelW=72, barMaxW=160, rowH=26, padTop=28, legH=20;
-    const svgH = padTop + items.length*rowH + legH + 10;
-    let s = '<svg width="380" height="'+svgH+'" xmlns="http://www.w3.org/2000/svg" font-family="Arial">';
-    s += '<text x="0" y="14" font-size="9" font-weight="bold" fill="#1e4080">'+titulo+'</text>';
-    items.forEach(function(item,i) {
-      const y = padTop + i*rowH;
-      const posW = Math.round((item.pos/maxV)*barMaxW);
-      const negW = Math.round((item.neg/maxV)*barMaxW);
-      s += '<text x="0" y="'+(y+10)+'" font-size="7.5" fill="#333">'+item.cod+'</text>';
-      s += '<rect x="'+labelW+'" y="'+y+'" width="'+posW+'" height="10" fill="'+colorP+'" rx="2"/>';
-      if(posW>0) s += '<text x="'+(labelW+posW+2)+'" y="'+(y+9)+'" font-size="6.5" fill="'+colorP+'">'+item.pos+'</text>';
-      s += '<rect x="'+labelW+'" y="'+(y+12)+'" width="'+negW+'" height="10" fill="'+colorN+'" rx="2"/>';
-      if(negW>0) s += '<text x="'+(labelW+negW+2)+'" y="'+(y+21)+'" font-size="6.5" fill="'+colorN+'">'+item.neg+'</text>';
+  // Generar graficos con Canvas para mejor compatibilidad con impresion
+  function mkBarChartCanvas(items, titulo, colorP, colorN, maxV) {
+    const canvas = document.createElement('canvas');
+    const rowH = 36, padTop = 40, labelW = 80, barMaxW = 220, padRight = 60;
+    canvas.width = 420;
+    canvas.height = padTop + items.length * rowH + 40;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Titulo
+    ctx.fillStyle = '#1e4080';
+    ctx.font = 'bold 11px Arial';
+    ctx.fillText(titulo, 0, 16);
+    // Barras
+    items.forEach(function(item, i) {
+      const y = padTop + i * rowH;
+      const posW = maxV > 0 ? Math.round((item.pos / maxV) * barMaxW) : 0;
+      const negW = maxV > 0 ? Math.round((item.neg / maxV) * barMaxW) : 0;
+      // Etiqueta codigo
+      ctx.fillStyle = '#333';
+      ctx.font = '9px Arial';
+      ctx.fillText(item.cod, 0, y + 11);
+      // Barra positiva
+      ctx.fillStyle = colorP;
+      ctx.fillRect(labelW, y, posW, 12);
+      ctx.fillStyle = colorP;
+      ctx.font = '8px Arial';
+      if (posW > 0) ctx.fillText(item.pos, labelW + posW + 3, y + 10);
+      // Barra negativa
+      ctx.fillStyle = colorN;
+      ctx.fillRect(labelW, y + 14, negW, 12);
+      ctx.fillStyle = colorN;
+      if (negW > 0) ctx.fillText(item.neg, labelW + negW + 3, y + 24);
     });
-    const ly = padTop + items.length*rowH + 6;
-    s += '<rect x="'+labelW+'" y="'+ly+'" width="10" height="7" fill="'+colorP+'"/>';
-    s += '<text x="'+(labelW+13)+'" y="'+(ly+7)+'" font-size="6.5" fill="#555">Positivos</text>';
-    s += '<rect x="'+(labelW+70)+'" y="'+ly+'" width="10" height="7" fill="'+colorN+'"/>';
-    s += '<text x="'+(labelW+83)+'" y="'+(ly+7)+'" font-size="6.5" fill="#555">Negativos</text>';
-    s += '</svg>';
-    return s;
+    // Leyenda
+    const ly = padTop + items.length * rowH + 8;
+    ctx.fillStyle = colorP;
+    ctx.fillRect(labelW, ly, 12, 8);
+    ctx.fillStyle = '#555';
+    ctx.font = '8px Arial';
+    ctx.fillText('Positivos', labelW + 15, ly + 8);
+    ctx.fillStyle = colorN;
+    ctx.fillRect(labelW + 80, ly, 12, 8);
+    ctx.fillStyle = '#555';
+    ctx.fillText('Negativos', labelW + 95, ly + 8);
+    return canvas.toDataURL('image/png');
   }
 
-  const svgAcept = mkBarChart(top5PosG,'Top 5 Mayor aceptacion','#1a6e1a','#b71c1c',maxValG);
-  const svgRechazo = mkBarChart(top5NegG,'Top 5 Mayor rechazo','#1a6e1a','#b71c1c',maxValG);
-  const svgRiesgo = mkBarChart(top5RiesgoG,'Top 5 Riesgo exclusion (neto mas bajo)','#1a6e1a','#b71c1c',maxValG);
+  const imgAcept = mkBarChartCanvas(top5PosG, 'Top 5 - Mayor aceptacion social', '#1a6e1a', '#b71c1c', maxValG);
+  const imgRechazo = mkBarChartCanvas(top5NegG, 'Top 5 - Mayor rechazo social', '#1a6e1a', '#b71c1c', maxValG);
+  const imgRiesgo = mkBarChartCanvas(top5RiesgoG, 'Top 5 - Riesgo de exclusion', '#1a6e1a', '#b71c1c', maxValG);
 
   const graficosHTML = '<div style="page-break-before:always;padding-top:10pt;">'
-    + '<h2 style="font-family:Arial;font-size:12pt;font-weight:bold;color:#1e4080;margin:0 0 14pt;padding-bottom:3pt;border-bottom:1px solid #4472C4;">GRAFICOS DESCRIPTIVOS</h2>'
-    + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14pt;">'
-    + '<div>'+svgAcept+'</div>'
-    + '<div>'+svgRechazo+'</div>'
-    + '<div>'+svgRiesgo+'</div>'
+    + '<h2 style="font-family:Arial;font-size:12pt;font-weight:bold;color:#1e4080;margin:0 0 16pt;padding-bottom:4pt;border-bottom:2px solid #4472C4;">GRAFICOS DESCRIPTIVOS</h2>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16pt;margin-top:10pt;">'
+    + '<div><img src="'+imgAcept+'" style="width:100%;height:auto;"/></div>'
+    + '<div><img src="'+imgRechazo+'" style="width:100%;height:auto;"/></div>'
+    + '<div><img src="'+imgRiesgo+'" style="width:100%;height:auto;"/></div>'
     + '</div>'
-    + '<p style="font-size:7.5pt;color:#666;margin-top:10pt;font-style:italic;">Las barras verdes representan votos positivos recibidos y las rojas los negativos acumulados en todas las preguntas sociometricas.</p>'
+    + '<p style="font-size:7.5pt;color:#666;margin-top:12pt;font-style:italic;">Los graficos muestran el total acumulado de votos positivos (verde) y negativos (rojo) recibidos en todas las preguntas sociometricas por cada alumno.</p>'
     + '</div>';
 
-    const htmlCompleto = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+  const htmlCompleto = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
   <title>Informe Sociométrico ${sesionId}</title>
   <style>
     @page { size: A4; margin: 20mm 20mm 20mm 20mm; }
@@ -1947,8 +1971,10 @@ function descargarPDF() {
     .cab-titulo { font-size: 16pt; font-weight: bold; color: #1e4080; }
     .cab-sub { font-size: 9pt; color: #666; margin-top: 4pt; }
     h2 { page-break-after: avoid; }
-    table { page-break-inside: auto; }
+    table { page-break-inside: auto; width: 100%; border-collapse: collapse; margin: 8pt 0; }
     tr { page-break-inside: avoid; }
+    p { margin: 0 0 7pt; line-height: 1.55; text-align: justify; }
+    img { max-width: 100%; }
     @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
   </style>
   </head><body>
@@ -1963,7 +1989,7 @@ function descargarPDF() {
   const ventana = window.open('', '_blank');
   ventana.document.write(htmlCompleto);
   ventana.document.close();
-  setTimeout(() => ventana.print(), 600);
+  setTimeout(function() { ventana.print(); }, 1200);
 }
 
 function descargarDOCX() {
