@@ -1849,147 +1849,146 @@ async function generarInforme() {
 function descargarPDF() {
   if (!informeTexto) return;
   const fecha = new Date().toLocaleDateString('es-ES');
-  const sesionId = sesion?.id || '';
-  const nAlumnos = sesion?.codigos?.length || 0;
+  const sesionId = sesion ? sesion.id : '';
+  const nAlumnos = sesion ? sesion.codigos.length : 0;
 
-  // Convertir texto a HTML con estilos para impresión
-  const htmlLineas = informeTexto.split('\n').map(line => {
-    const isTitle = /^[\d\.\s]*[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\.\d]{3,}:/.test(line.trim()) && line.trim().length < 100;
-    const isTablaRow = line.includes('|') && line.trim().length > 3;
-    if (line.trim() === '') return '<div style="height:8px"></div>';
-    if (isTitle) return `<h2 style="font-family:Arial,sans-serif;font-size:12pt;font-weight:bold;color:#1e4080;margin:18pt 0 4pt;padding-bottom:3pt;border-bottom:1px solid #4472C4;page-break-after:avoid;">${line.trim()}</h2>`;
-    if (isTablaRow) {
-      const cells = line.split('|').map(c => c.trim());
-      const isHeader = cells.some(c => /\(\+\)|\(\-\)/.test(c)) || (cells[0] && cells[0].toUpperCase()===cells[0] && cells[0].length>2);
-      const tdStyle = isHeader
-        ? 'background:#dce6f1;font-weight:bold;font-size:8pt;padding:3pt 5pt;border:1px solid #aaa;'
-        : 'font-size:8pt;padding:3pt 5pt;border:1px solid #ccc;';
-      return `<tr>${cells.map(c=>`<td style="${tdStyle}">${c}</td>`).join('')}</tr>`;
-    }
-    return `<p style="font-family:Arial,sans-serif;font-size:10pt;line-height:1.6;margin:0 0 6pt;text-align:justify;">${line.trim()}</p>`;
-  });
-
-  // Agrupar filas de tabla
-  let htmlFinal = '';
-  let enTabla = false;
-  htmlLineas.forEach(h => {
-    if (h.startsWith('<tr>')) {
-      if (!enTabla) { htmlFinal += '<table style="width:100%;border-collapse:collapse;margin:8pt 0;">'; enTabla = true; }
-      htmlFinal += h;
-    } else {
-      if (enTabla) { htmlFinal += '</table>'; enTabla = false; }
-      htmlFinal += h;
-    }
-  });
-  if (enTabla) htmlFinal += '</table>';
-
-  // Graficos descriptivos SVG para el PDF
-  const codigosG = sesion.codigos;
+  // Calcular datos para graficos
+  const codigosG = sesion ? sesion.codigos : [];
   const nG = codigosG.length;
   const posRecG = new Array(nG).fill(0);
   const negRecG = new Array(nG).fill(0);
-  PREGUNTAS_SOCIO.forEach((p, pi) => {
+  PREGUNTAS_SOCIO.forEach(function(p, pi) {
     const arr = getEleccionesPregunta(pi);
-    arr.forEach((elecs, i) => elecs.forEach(j => {
-      if (p.tipo==='pos') posRecG[j]++; else negRecG[j]++;
-    }));
-  });
-  const datosG = codigosG.map((cod,i) => ({cod, pos:posRecG[i], neg:negRecG[i], neto:posRecG[i]-negRecG[i]}));
-  const top5PosG = [...datosG].sort((a,b)=>b.pos-a.pos).slice(0,5);
-  const top5NegG = [...datosG].sort((a,b)=>b.neg-a.neg).slice(0,5);
-  const top5RiesgoG = [...datosG].sort((a,b)=>a.neto-b.neto).slice(0,5);
-  const maxValG = Math.max(...datosG.map(x=>Math.max(x.pos,x.neg)), 1);
-
-  // Generar graficos con Canvas para mejor compatibilidad con impresion
-  function mkBarChartCanvas(items, titulo, colorP, colorN, maxV) {
-    const canvas = document.createElement('canvas');
-    const rowH = 36, padTop = 40, labelW = 80, barMaxW = 220, padRight = 60;
-    canvas.width = 420;
-    canvas.height = padTop + items.length * rowH + 40;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    // Titulo
-    ctx.fillStyle = '#1e4080';
-    ctx.font = 'bold 11px Arial';
-    ctx.fillText(titulo, 0, 16);
-    // Barras
-    items.forEach(function(item, i) {
-      const y = padTop + i * rowH;
-      const posW = maxV > 0 ? Math.round((item.pos / maxV) * barMaxW) : 0;
-      const negW = maxV > 0 ? Math.round((item.neg / maxV) * barMaxW) : 0;
-      // Etiqueta codigo
-      ctx.fillStyle = '#333';
-      ctx.font = '9px Arial';
-      ctx.fillText(item.cod, 0, y + 11);
-      // Barra positiva
-      ctx.fillStyle = colorP;
-      ctx.fillRect(labelW, y, posW, 12);
-      ctx.fillStyle = colorP;
-      ctx.font = '8px Arial';
-      if (posW > 0) ctx.fillText(item.pos, labelW + posW + 3, y + 10);
-      // Barra negativa
-      ctx.fillStyle = colorN;
-      ctx.fillRect(labelW, y + 14, negW, 12);
-      ctx.fillStyle = colorN;
-      if (negW > 0) ctx.fillText(item.neg, labelW + negW + 3, y + 24);
+    arr.forEach(function(elecs, i) {
+      elecs.forEach(function(j) {
+        if (p.tipo==='pos') posRecG[j]++; else negRecG[j]++;
+      });
     });
-    // Leyenda
-    const ly = padTop + items.length * rowH + 8;
-    ctx.fillStyle = colorP;
-    ctx.fillRect(labelW, ly, 12, 8);
-    ctx.fillStyle = '#555';
-    ctx.font = '8px Arial';
-    ctx.fillText('Positivos', labelW + 15, ly + 8);
-    ctx.fillStyle = colorN;
-    ctx.fillRect(labelW + 80, ly, 12, 8);
-    ctx.fillStyle = '#555';
-    ctx.fillText('Negativos', labelW + 95, ly + 8);
+  });
+  const datosG = codigosG.map(function(cod,i){ return {cod:cod, pos:posRecG[i], neg:negRecG[i], neto:posRecG[i]-negRecG[i]}; });
+  const top5PosG = datosG.slice().sort(function(a,b){return b.pos-a.pos;}).slice(0,5);
+  const top5NegG = datosG.slice().sort(function(a,b){return b.neg-a.neg;}).slice(0,5);
+  const top5RiesgoG = datosG.slice().sort(function(a,b){return a.neto-b.neto;}).slice(0,5);
+  const maxValG = Math.max.apply(null, datosG.map(function(x){return Math.max(x.pos,x.neg);})) || 1;
+
+  function mkChart(items, titulo, cPos, cNeg, maxV) {
+    const canvas = document.createElement('canvas');
+    const rowH=32, padTop=30, labelW=72, barMaxW=200, padRight=50;
+    canvas.width = 420;
+    canvas.height = padTop + items.length*rowH + 36;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle='#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle='#1e4080'; ctx.font='bold 10px Arial';
+    ctx.fillText(titulo, 0, 16);
+    items.forEach(function(item,i) {
+      const y = padTop + i*rowH;
+      const posW = maxV>0 ? Math.round((item.pos/maxV)*barMaxW) : 0;
+      const negW = maxV>0 ? Math.round((item.neg/maxV)*barMaxW) : 0;
+      ctx.fillStyle='#333'; ctx.font='8.5px Arial';
+      ctx.fillText(item.cod, 0, y+11);
+      ctx.fillStyle=cPos; ctx.fillRect(labelW, y, posW||2, 11);
+      ctx.fillStyle=cPos; ctx.font='7.5px Arial';
+      ctx.fillText(item.pos, labelW+(posW||2)+3, y+10);
+      ctx.fillStyle=cNeg; ctx.fillRect(labelW, y+13, negW||2, 11);
+      ctx.fillStyle=cNeg;
+      ctx.fillText(item.neg, labelW+(negW||2)+3, y+22);
+    });
+    const ly = padTop + items.length*rowH + 8;
+    ctx.fillStyle=cPos; ctx.fillRect(labelW, ly, 11, 8);
+    ctx.fillStyle='#555'; ctx.font='7.5px Arial'; ctx.fillText('Positivos', labelW+14, ly+8);
+    ctx.fillStyle=cNeg; ctx.fillRect(labelW+75, ly, 11, 8);
+    ctx.fillText('Negativos', labelW+89, ly+8);
     return canvas.toDataURL('image/png');
   }
 
-  const imgAcept = mkBarChartCanvas(top5PosG, 'Top 5 - Mayor aceptacion social', '#1a6e1a', '#b71c1c', maxValG);
-  const imgRechazo = mkBarChartCanvas(top5NegG, 'Top 5 - Mayor rechazo social', '#1a6e1a', '#b71c1c', maxValG);
-  const imgRiesgo = mkBarChartCanvas(top5RiesgoG, 'Top 5 - Riesgo de exclusion', '#1a6e1a', '#b71c1c', maxValG);
+  const imgA = mkChart(top5PosG,'Top 5 - Mayor aceptacion','#1a6e1a','#b71c1c',maxValG);
+  const imgR = mkChart(top5NegG,'Top 5 - Mayor rechazo','#1a6e1a','#b71c1c',maxValG);
+  const imgX = mkChart(top5RiesgoG,'Top 5 - Riesgo exclusion','#1a6e1a','#b71c1c',maxValG);
 
-  const graficosHTML = '<div style="page-break-before:always;padding-top:10pt;">'
-    + '<h2 style="font-family:Arial;font-size:12pt;font-weight:bold;color:#1e4080;margin:0 0 16pt;padding-bottom:4pt;border-bottom:2px solid #4472C4;">GRAFICOS DESCRIPTIVOS</h2>'
-    + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16pt;margin-top:10pt;">'
-    + '<div><img src="'+imgAcept+'" style="width:100%;height:auto;"/></div>'
-    + '<div><img src="'+imgRechazo+'" style="width:100%;height:auto;"/></div>'
-    + '<div><img src="'+imgRiesgo+'" style="width:100%;height:auto;"/></div>'
+  // Convertir texto del informe a HTML limpio
+  function textoAHtml(texto) {
+    const lineas = texto.split('\n');
+    let html = '';
+    let enTabla = false;
+    let bufTabla = '';
+
+    function cerrarTabla() {
+      if (!enTabla) return;
+      html += '<table>' + bufTabla + '</table>';
+      bufTabla = ''; enTabla = false;
+    }
+
+    lineas.forEach(function(linea) {
+      const trim = linea.trim();
+      if (trim === '') { cerrarTabla(); html += '<div class="sep"></div>'; return; }
+
+      // Detectar titulo: empieza por numero o letras mayusculas seguidas de ':'
+      const esTitle = /^(\d+[\.\d]*\s+)?[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\.\d]{3,}:/.test(trim) && trim.length < 120 && trim === trim.toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ\s\d\.\:]/g,'') ? false : /^(\d+[\.\d]*\.?\s+)?[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\.\d]{3,}:$/.test(trim) || (/^(\d+[\.\d]*\.?\s+)?[A-ZÁÉÍÓÚÑ]{2}[A-ZÁÉÍÓÚÑ\s\.\d]*:/.test(trim) && trim.length < 80 && !trim.includes(',') && trim === trim.toUpperCase().replace(/[áéíóúñ]/gi, function(m){return m;}) ? true : false);
+
+      // Deteccion mas simple y robusta de titulos
+      const esTituloSimple = trim.length < 90 && trim.endsWith(':') && /^[\d\.\s]*[A-ZÁÉÍÓÚÑ]/.test(trim) && trim.split(' ').filter(function(w){return w.length>2;}).every(function(w){return w[0]===w[0].toUpperCase();});
+
+      const esFilaTabla = trim.includes('|') && trim.split('|').length >= 2;
+
+      if (esTituloSimple) {
+        cerrarTabla();
+        html += '<h2>' + trim + '</h2>';
+      } else if (esFilaTabla) {
+        const celdas = trim.split('|').map(function(c){return c.trim();});
+        const esHeader = celdas.some(function(c){return /Votos|Alumno|Subgrupo|Trab|Ocio|Componentes|Posit|Negat/.test(c);});
+        const td = esHeader ? 'th' : 'td';
+        bufTabla += '<tr>' + celdas.map(function(c){return '<'+td+'>'+c+'</'+td+'>';}).join('') + '</tr>';
+        enTabla = true;
+      } else {
+        cerrarTabla();
+        html += '<p>' + trim + '</p>';
+      }
+    });
+    cerrarTabla();
+    return html;
+  }
+
+  const htmlInforme = textoAHtml(informeTexto);
+  const htmlGraficos = '<div class="pgbreak">'
+    + '<h2>GRAFICOS DESCRIPTIVOS</h2>'
+    + '<div class="grid3">'
+    + '<div><img src="'+imgA+'" style="width:100%"/></div>'
+    + '<div><img src="'+imgR+'" style="width:100%"/></div>'
+    + '<div><img src="'+imgX+'" style="width:100%"/></div>'
     + '</div>'
-    + '<p style="font-size:7.5pt;color:#666;margin-top:12pt;font-style:italic;">Los graficos muestran el total acumulado de votos positivos (verde) y negativos (rojo) recibidos en todas las preguntas sociometricas por cada alumno.</p>'
+    + '<p class="nota">Barras verdes: votos positivos recibidos. Barras rojas: votos negativos. Total acumulado de todas las preguntas sociometricas.</p>'
     + '</div>';
 
-  const htmlCompleto = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
-  <title>Informe Sociométrico ${sesionId}</title>
-  <style>
-    @page { size: A4; margin: 20mm 20mm 20mm 20mm; }
-    body { font-family: Arial, sans-serif; font-size: 10pt; color: #222; margin: 0; padding: 0; }
-    .cabecera { border-bottom: 3px solid #1e4080; padding-bottom: 10pt; margin-bottom: 16pt; }
-    .cab-titulo { font-size: 16pt; font-weight: bold; color: #1e4080; }
-    .cab-sub { font-size: 9pt; color: #666; margin-top: 4pt; }
-    h2 { page-break-after: avoid; }
-    table { page-break-inside: auto; width: 100%; border-collapse: collapse; margin: 8pt 0; }
-    tr { page-break-inside: avoid; }
-    p { margin: 0 0 7pt; line-height: 1.55; text-align: justify; }
-    img { max-width: 100%; }
-    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-  </style>
-  </head><body>
-  <div class="cabecera">
-    <div class="cab-titulo">INFORME SOCIOMÉTRICO</div>
-    <div class="cab-sub">Sesión: ${sesionId} &nbsp;·&nbsp; Fecha: ${fecha} &nbsp;·&nbsp; Alumnado: ${nAlumnos} &nbsp;·&nbsp; Departamento de Orientación</div>
-  </div>
-  ${htmlFinal}
-  ${graficosHTML}
-  </body></html>`;
+  const htmlCompleto = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+    + '<title>Informe Sociometrico ' + sesionId + '</title>'
+    + '<style>'
+    + '@page{size:A4;margin:18mm 20mm 18mm 20mm}'
+    + 'body{font-family:Arial,sans-serif;font-size:10pt;color:#222;margin:0;padding:0}'
+    + '.cab{border-bottom:3px solid #1e4080;padding-bottom:8pt;margin-bottom:14pt}'
+    + '.cab-t{font-size:15pt;font-weight:bold;color:#1e4080}'
+    + '.cab-s{font-size:8.5pt;color:#666;margin-top:3pt}'
+    + 'h2{font-family:Arial;font-size:11pt;font-weight:bold;color:#1e4080;margin:14pt 0 4pt;padding-bottom:2pt;border-bottom:1px solid #4472C4;page-break-after:avoid}'
+    + 'p{margin:0 0 6pt;line-height:1.55;text-align:justify}'
+    + '.sep{height:4pt}'
+    + 'table{width:100%;border-collapse:collapse;margin:6pt 0;page-break-inside:auto}'
+    + 'th{background:#dce6f1;font-size:8pt;font-weight:bold;padding:3pt 5pt;border:1px solid #999;text-align:left}'
+    + 'td{font-size:8pt;padding:3pt 5pt;border:1px solid #ccc}'
+    + 'tr{page-break-inside:avoid}'
+    + '.pgbreak{page-break-before:always;padding-top:8pt}'
+    + '.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12pt;margin-top:10pt}'
+    + '.nota{font-size:7.5pt;color:#666;font-style:italic;margin-top:8pt}'
+    + 'img{max-width:100%}'
+    + '@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}'
+    + '</style></head><body>'
+    + '<div class="cab"><div class="cab-t">INFORME SOCIOMETRICO</div>'
+    + '<div class="cab-s">Sesion: ' + sesionId + ' &nbsp;&middot;&nbsp; Fecha: ' + fecha + ' &nbsp;&middot;&nbsp; Alumnado: ' + nAlumnos + ' &nbsp;&middot;&nbsp; Departamento de Orientacion</div></div>'
+    + htmlInforme
+    + htmlGraficos
+    + '</body></html>';
 
-  const ventana = window.open('', '_blank');
-  ventana.document.write(htmlCompleto);
-  ventana.document.close();
-  // No lanzar impresion automatica — el usuario pulsa Ctrl+P cuando vea el contenido completo
+  const v = window.open('', '_blank');
+  v.document.write(htmlCompleto);
+  v.document.close();
 }
 
 function descargarDOCX() {
