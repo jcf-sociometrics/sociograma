@@ -1989,7 +1989,7 @@ function descargarPDF() {
   const ventana = window.open('', '_blank');
   ventana.document.write(htmlCompleto);
   ventana.document.close();
-  setTimeout(function() { ventana.print(); }, 1200);
+  // No lanzar impresion automatica — el usuario pulsa Ctrl+P cuando vea el contenido completo
 }
 
 function descargarDOCX() {
