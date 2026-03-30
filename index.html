@@ -2093,15 +2093,13 @@ async function generarGraficasEstadisticas() {
     };
 }
 /* === FIN BLOQUE DE GRAFICAS === */
-async function descargarPDF() {
 
+   async function descargarPDF() {
     if (!informeTexto) return;
-    const charts = await generarGraficasEstadisticas();
-
+    const charts = await generarGraficasEstadisticas();   // <-- ya lo tienes aquí
     const fecha = new Date().toLocaleDateString('es-ES');
     const sid = sesion?.id || '';
-
-    const v = window.open('','_blank');
+    const v = window.open('', '_blank');
 
     const html = `
 <!DOCTYPE html>
@@ -3127,10 +3125,27 @@ function descargarPDFComparativo() {
   </div>
   ${htmlLineas}</body></html>`;
 
-  const v = window.open('', '_blank');
-  v.document.write(html);
-  v.document.close();
-  setTimeout(() => v.print(), 600);
+// Crear iframe oculto
+const iframe = document.createElement('iframe');
+iframe.style.position = 'fixed';
+iframe.style.right = '0';
+iframe.style.bottom = '0';
+iframe.style.width = '0';
+iframe.style.height = '0';
+iframe.style.border = '0';
+document.body.appendChild(iframe);
+
+// Escribir el HTML dentro del iframe
+iframe.contentWindow.document.open();
+iframe.contentWindow.document.write(html);
+iframe.contentWindow.document.close();
+
+// Esperar a que el iframe cargue TODO
+setTimeout(() => {
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+    document.body.removeChild(iframe);
+}, 800);
 }
 
 const tabActions = {
