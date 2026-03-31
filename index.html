@@ -558,6 +558,7 @@ textarea { resize: vertical; min-height: 60px; }
 }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
 </head>
 <body>
 
@@ -886,7 +887,6 @@ textarea { resize: vertical; min-height: 60px; }
         <div class="card-sub">La IA analiza todos los datos y genera un informe pedagógico profesional en español, destacando los 3 alumnos con mayor aceptación y los 3 con mayor riesgo/rechazo, con justificaciones de sus compañeros.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-blue" id="btn-generar-informe" onclick="generarInforme()">✨ Generar informe</button>
-          <button class="btn btn-ghost btn-sm" id="btn-pdf" onclick="descargarPDF()" style="display:none;">📄 Descargar PDF</button>
 <button class="btn btn-green btn-sm" id="btn-pdf-real"
         onclick="descargarPDF_REAL()" style="display:none;">
     📄 Descargar PDF REAL
@@ -1981,96 +1981,142 @@ Las figuras estadísticas (gráficas) serán añadidas por la aplicación fuera 
     btn.innerHTML = "✨ Regenerar informe";
 }
 
-//// ============================================================
-//// === NUEVA FUNCIÓN PARA DESCARGAR EL INFORME COMO PDF =======
-//// ============================================================
-// ======================================================
-// BLOQUE 4 — PDF PROFESIONAL CON GRÁFICAS
-// ======================================================
-/* ============================
-   GRAFICAS DEL ANEXO ESTADISTICO — VERSION PRO
-   ============================ */
+/* ============================================================
+   PDF REAL PROFESIONAL — VERSIÓN CORREGIDA Y FUNCIONAL
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   1. FUNCIÓN QUE GENERA LAS GRÁFICAS EN PNG
+   ------------------------------------------------------------ */
+async function generarGraficasEstadisticas() {
+
+  // Asegurarte de que las gráficas están renderizadas
+  // (tu app ya las calcula en generarInforme)
+
+  const acept = document.getElementById("chart-top-acept").toDataURL("image/png");
+  const rech  = document.getElementById("chart-top-rech").toDataURL("image/png");
+  const cat   = document.getElementById("chart-categorias").toDataURL("image/png");
+  const radar = document.getElementById("chart-radar").toDataURL("image/png");
+
+  return { acept, rech, cat, radar };
+}
+
+/* ------------------------------------------------------------
+   2. CREAR PDF PROFESIONAL CON PDF-LIB
+   ------------------------------------------------------------ */
 async function descargarPDF_REAL() {
+  if (!informeTexto) {
+    showToast("Primero genera el informe.");
+    return;
+  }
 
-    if (!informeTexto) return;
+  // Aseguramos que PDF-Lib está cargado
+  if (typeof PDFLib === "undefined") {
+    alert("Error: PDFLib no está cargado.");
+    return;
+  }
 
-    // 1. Obtener las imágenes estadísticas
-    const charts = await generarGraficasEstadisticas();
+  const { PDFDocument, StandardFonts, rgb } = PDFLib;
 
-    // 2. Crear PDF vacío
-    const { PDFDocument, StandardFonts, rgb } = PDFLib;
-    const pdf = await PDFDocument.create();
+  // 1. Obtener imágenes del anexo
+  const charts = await generarGraficasEstadisticas();
 
-    const page = pdf.addPage([595, 842]); // A4 vertical
-    const font = await pdf.embedFont(StandardFonts.Helvetica);
+  // 2. Crear PDF
+  const pdf = await PDFDocument.create();
+  let page = pdf.addPage([595, 842]);   // A4
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
 
-    let y = 800;
+  let y = 800;
 
-    // ==== TÍTULO ====
-    page.drawText('Informe Sociométrico', {
-        x: 50,
-        y,
-        size: 22,
-        font,
-        color: rgb(0.1, 0.25, 0.36),
-    });
-    y -= 40;
+  /* ------------------------------------------------------------
+     CABECERA DEL INFORME
+     ------------------------------------------------------------ */
+  page.drawText('Informe Sociométrico', {
+    x: 50,
+    y,
+    size: 22,
+    font,
+    color: rgb(0.1, 0.25, 0.36)
+  });
 
-    // ==== METADATOS ====
-    const fecha = new Date().toLocaleDateString("es-ES");
-    page.drawText(`Sesión: ${sesion.id} · Fecha: ${fecha}`, {
-        x: 50,
-        y,
-        size: 11
-    });
-    y -= 30;
+  y -= 40;
 
-    // ==== TEXTO DEL INFORME ====
-    const lines = informeTexto.split("\n");
-    lines.forEach(line => {
-        if (y < 60) {
-            page = pdf.addPage([595,842]);
-            y = 800;
-        }
-        page.drawText(line.trim(), { x: 50, y, size: 10, font });
-        y -= 16;
-    });
+  const fecha = new Date().toLocaleDateString("es-ES");
 
-    // ==== NUEVA PÁGINA PARA GRÁFICOS ====
-    const page2 = pdf.addPage([595, 842]);
-    let y2 = 780;
+  page.drawText(`Sesión: ${sesion.id} · Fecha: ${fecha}`, {
+    x: 50,
+    y,
+    size: 11,
+    font
+  });
 
-    // Función para insertar imágenes PNG
-    async function insertarPNG(base64, ancho) {
-        const png = await pdf.embedPng(base64);
-        const escala = ancho / png.width;
-        const alto = png.height * escala;
+  y -= 30;
 
-        page2.drawImage(png, {
-            x: 50,
-            y: y2 - alto,
-            width: ancho,
-            height: alto,
-        });
+  /* ------------------------------------------------------------
+     TEXTO DEL INFORME — CON SALTO AUTOMÁTICO DE PÁGINA
+     ------------------------------------------------------------ */
+  const lines = informeTexto.split("\n");
 
-        y2 -= alto + 30;
+  for (let line of lines) {
+
+    if (y < 60) {
+      page = pdf.addPage([595, 842]);
+      y = 800;
     }
 
-    await insertarPNG(charts.acept, 450);
-    await insertarPNG(charts.rech, 450);
-    await insertarPNG(charts.cat, 450);
-    await insertarPNG(charts.radar, 450);
+    const clean = line.trim();
 
-    // Guardar PDF
-    const bytes = await pdf.save();
-    const blob = new Blob([bytes], { type: "application/pdf" });
-    const enlace = document.createElement("a");
+    if (clean !== "") {
+      page.drawText(clean, {
+        x: 50,
+        y,
+        size: 10,
+        font
+      });
+    }
 
-    enlace.href = URL.createObjectURL(blob);
-    enlace.download = `Informe_sociometrico_${sesion.id}.pdf`;
-    enlace.click();
+    y -= 16;
+  }
 
-    showToast("PDF descargado correctamente");
+  /* ------------------------------------------------------------
+     NUEVA PÁGINA PARA GRÁFICAS
+     ------------------------------------------------------------ */
+  let page2 = pdf.addPage([595, 842]);
+  let y2 = 780;
+
+  async function insertarPNG(base64, ancho) {
+    const png = await pdf.embedPng(base64);
+    const escala = ancho / png.width;
+    const alto = png.height * escala;
+
+    page2.drawImage(png, {
+      x: 50,
+      y: y2 - alto,
+      width: ancho,
+      height: alto
+    });
+
+    y2 -= alto + 30;
+  }
+
+  // Insertar todas las gráficas
+  await insertarPNG(charts.acept, 450);
+  await insertarPNG(charts.rech, 450);
+  await insertarPNG(charts.cat, 450);
+  await insertarPNG(charts.radar, 450);
+
+  /* ------------------------------------------------------------
+     DESCARGAR PDF
+     ------------------------------------------------------------ */
+  const bytes = await pdf.save();
+  const blob = new Blob([bytes], { type: "application/pdf" });
+
+  const enlace = document.createElement("a");
+  enlace.href = URL.createObjectURL(blob);
+  enlace.download = `Informe_sociometrico_${sesion.id}.pdf`;
+  enlace.click();
+
+  showToast("PDF REAL generado correctamente");
 }
 
 //// ============================================================
@@ -3301,9 +3347,14 @@ window.addEventListener('resize', () => {
   }
 });
 </script>
-<!-- tus pantallas HTML -->
-    <!-- tu informe-output -->
-    <!-- todo tu contenido -->
+
+<!-- Contenedor oculto para generar las gráficas del anexo -->
+<div id="charts-hidden" style="visibility:hidden; position:absolute; left:-9999px; top:-9999px;">
+    <canvas id="chart-top-acept" width="600" height="300"></canvas>
+    <canvas id="chart-top-rech" width="600" height="300"></canvas>
+    <canvas id="chart-categorias" width="600" height="300"></canvas>
+    <canvas id="chart-radar" width="600" height="300"></canvas>
+</div>
 
 </body>
 </html>
