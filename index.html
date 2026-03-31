@@ -1909,34 +1909,195 @@ ${topRech.map(a => `• ${a.cod} (${a.negRec} negativas)`).join("\n")}
    1. FUNCIÓN QUE GENERA LAS GRÁFICAS DEL ANEXO PARA EL PDF
    ============================================================ */
 
-async function renderGraficasAnexo() {
-  return new Promise(resolve => {
-    setTimeout(() => {
+//--------------------------------------------------------------------
+// GRÁFICAS REALES PARA EL PDF — VERSIÓN FINAL (Chart.js + await)
+//--------------------------------------------------------------------
+let pdfCharts = {};
 
-      // ***** GRÁFICAS DE PRUEBA (colores) *****
-      // Luego te haré las gráficas reales con Chart.js
-
-      const ctx1 = document.getElementById("chart-top-acept").getContext("2d");
-      ctx1.fillStyle = "#3fb950";
-      ctx1.fillRect(0, 0, 600, 300);
-
-      const ctx2 = document.getElementById("chart-top-rech").getContext("2d");
-      ctx2.fillStyle = "#f85149";
-      ctx2.fillRect(0, 0, 600, 300);
-
-      const ctx3 = document.getElementById("chart-categorias").getContext("2d");
-      ctx3.fillStyle = "#58a6ff";
-      ctx3.fillRect(0, 0, 600, 300);
-
-      const ctx4 = document.getElementById("chart-radar").getContext("2d");
-      ctx4.fillStyle = "#d29922";
-      ctx4.fillRect(0, 0, 600, 300);
-// Esperar un poco para que Chart.js termine
-
-      setTimeout(() => resolve(), 200);
-    }, 200);
-  });
+function destroyPdfChart(id) {
+    if (pdfCharts[id]) {
+        pdfCharts[id].destroy();
+        delete pdfCharts[id];
+    }
 }
+
+async function waitForChart(chart) {
+    // Chart.js 4: update() devuelve una promesa
+    await chart.update();
+    // pequeño respiro para asegurar render final en canvases ocultos
+    await new Promise(res => setTimeout(res, 80));
+}
+
+async function renderGraficasAnexo() {
+    const codigos = sesion.codigos;
+    const n = codigos.length;
+
+    const { posRec, negRec, posEm, negEm } = calcTotales();
+    const netos = codigos.map((_, i) => posRec[i] - negRec[i]);
+
+    // TOP ACEPTACIÓN
+    const topAcept = [...codigos.map((cod, i) => ({
+        cod, val: posRec[i]
+    }))].sort((a,b)=>b.val-a.val).slice(0,5);
+
+    // TOP RECHAZO
+    const topRech = [...codigos.map((cod, i) => ({
+        cod, val: negRec[i]
+    }))].sort((a,b)=>b.val-a.val).slice(0,5);
+
+    // CATEGORÍAS
+    const cats = contarCategorias();
+    const catLabels = Object.keys(cats);
+    const catValues = Object.values(cats);
+
+    // PERFIL GLOBAL
+    const perfil = calcularPerfilGlobal();
+
+
+    //----------------------------------------------------------------
+    // GRÁFICA 1 — TOP ACEPTACIÓN
+    //----------------------------------------------------------------
+    destroyPdfChart("chart-top-acept");
+    const c1 = document.getElementById("chart-top-acept");
+    c1.width = 600; c1.height = 300;
+
+    pdfCharts["chart-top-acept"] = new Chart(c1.getContext("2d"), {
+        type: "bar",
+        data: {
+            labels: topAcept.map(x => x.cod),
+            datasets: [{
+                label: "Positivas recibidas",
+                data: topAcept.map(x => x.val),
+                backgroundColor: "#3fb950",
+                borderColor: "#29a341",
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: "#fff" }},
+                y: { beginAtZero: true, ticks: { color: "#fff" }}
+            }
+        }
+    });
+    await waitForChart(pdfCharts["chart-top-acept"]);
+
+
+    //----------------------------------------------------------------
+    // GRÁFICA 2 — TOP RECHAZO
+    //----------------------------------------------------------------
+    destroyPdfChart("chart-top-rech");
+    const c2 = document.getElementById("chart-top-rech");
+    c2.width = 600; c2.height = 300;
+
+    pdfCharts["chart-top-rech"] = new Chart(c2.getContext("2d"), {
+        type: "bar",
+        data: {
+            labels: topRech.map(x => x.cod),
+            datasets: [{
+                label: "Negativas recibidas",
+                data: topRech.map(x => x.val),
+                backgroundColor: "#f85149",
+                borderColor: "#d13c36",
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: "#fff" }},
+                y: { beginAtZero: true, ticks: { color: "#fff" }}
+            }
+        }
+    });
+    await waitForChart(pdfCharts["chart-top-rech"]);
+
+
+    //----------------------------------------------------------------
+    // GRÁFICA 3 — CATEGORÍAS (Pie)
+    //----------------------------------------------------------------
+    destroyPdfChart("chart-categorias");
+    const c3 = document.getElementById("chart-categorias");
+    c3.width = 600; c3.height = 300;
+
+    pdfCharts["chart-categorias"] = new Chart(c3.getContext("2d"), {
+        type: "pie",
+        data: {
+            labels: catLabels,
+            datasets: [{
+                data: catValues,
+                backgroundColor: [
+                    "#3fb950",
+                    "#f85149",
+                    "#7d8590",
+                    "#d29922",
+                    "#58a6ff",
+                    "#bc8cff"
+                ]
+            }]
+        },
+        options: {
+            responsive: false,
+            plugins: { legend: { labels: { color: "#fff" }}}
+        }
+    });
+    await waitForChart(pdfCharts["chart-categorias"]);
+
+
+    //----------------------------------------------------------------
+    // GRÁFICA 4 — RADAR (perfil sociométrico global)
+    //----------------------------------------------------------------
+    destroyPdfChart("chart-radar");
+    const c4 = document.getElementById("chart-radar");
+    c4.width = 600; c4.height = 300;
+
+    pdfCharts["chart-radar"] = new Chart(c4.getContext("2d"), {
+        type: "radar",
+        data: {
+            labels: [
+                "TL positivos",
+                "TL negativos",
+                "TG positivos",
+                "TG negativos",
+                "Recíprocas",
+                "Densidad (%)"
+            ],
+            datasets: [{
+                label: "Perfil grupal",
+                data: [
+                    perfil.tl_pos,
+                    perfil.tl_neg,
+                    perfil.tg_pos,
+                    perfil.tg_neg,
+                    perfil.recip,
+                    perfil.densidad
+                ],
+                backgroundColor: "rgba(88,166,255,0.2)",
+                borderColor: "#58a6ff",
+                borderWidth: 2,
+                pointBackgroundColor: "#58a6ff"
+            }]
+        },
+        options: {
+            responsive: false,
+            scales: {
+                r: {
+                    grid: { color: "rgba(255,255,255,0.2)" },
+                    pointLabels: { color: "#fff" },
+                    ticks: { color: "#fff" }
+                }
+            },
+            plugins: {
+                legend: { labels: { color: "#fff" }}
+            }
+        }
+    });
+    await waitForChart(pdfCharts["chart-radar"]);
+}
+
 
 async function generarGraficasEstadisticas() {
 //--------------------------------------------------------------------
