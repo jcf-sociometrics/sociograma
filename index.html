@@ -21926,113 +21926,41 @@ async function generarInforme() {
   });
 
   /* ============================================================
-     2. CALCULAR ESTADÍSTICAS ADICIONALES PARA EL PROMPT
+     2. PROMPT MEJORADO — sin markdown, estructura clara
      ============================================================ */
-  const mediaPos = (posRec.reduce((s,v)=>s+v,0)/n).toFixed(2);
-  const mediaNeg = (negRec.reduce((s,v)=>s+v,0)/n).toFixed(2);
-  const mediaNeto = (netos.reduce((s,v)=>s+v,0)/n).toFixed(2);
-  const rangoPos = Math.min(...posRec) + ' – ' + Math.max(...posRec);
-  const rangoNeg = Math.min(...negRec) + ' – ' + Math.max(...negRec);
-  const rangoNeto = Math.min(...netos) + ' – +' + Math.max(...netos);
+  const prompt = `Eres un orientador/a escolar experto/a en sociometria. Redacta un INFORME SOCIOMETRICO PROFESIONAL completo en espanol para el grupo ${sesion?.id||""}.
 
-  const aislamientoIdx = codigos.map((_,i)=>i)
-    .filter(i => posRec[i] <= 3 && negRec[i] <= 2)
-    .sort((a,b) => posRec[a]-posRec[b]);
-  const aislamientoTexto = aislamientoIdx.length
-    ? aislamientoIdx.map(i=>`${codigos[i]} (${posRec[i]} positivas, ${negRec[i]} negativas, neto ${netos[i]>=0?'+':''}${netos[i]})`).join(", ")
-    : "Ninguno detectado";
-
-  const rechazadosTexto = codigos.map((_,i)=>i)
-    .filter(i => netos[i] < 0)
-    .sort((a,b) => netos[a]-netos[b])
-    .map(i=>`${codigos[i]} (${posRec[i]} positivas, ${negRec[i]} negativas, neto ${netos[i]})`).join(", ") || "Ninguno";
-
-  const lideresTexto = codigos.map((_,i)=>i)
-    .sort((a,b)=>netos[b]-netos[a])
-    .slice(0,6)
-    .map(i=>`${codigos[i]} (${posRec[i]} positivas, ${negRec[i]} negativas, neto ${netos[i]>=0?'+':''}${netos[i]})`).join(", ");
-
-  const totalRespondieron = Object.keys(respuestas||{}).length;
-  const tasaParticipacion = n > 0 ? Math.round(totalRespondieron/n*100) : 100;
-
-  /* ============================================================
-     3. PROMPT DETALLADO — estructura como informe de referencia
-     ============================================================ */
-  const prompt = `Eres un orientador/a escolar experto/a en sociometría. Redacta un INFORME SOCIOMÉTRICO PROFESIONAL completo en español para el grupo ${sesion?.id||""}.
-
-DATOS GENERALES:
-- Grupo: ${sesion?.id||""}
-- Número de alumnos: ${n}
-- Tasa de participación: ${tasaParticipacion}% (${totalRespondieron} de ${n} alumnos)
-- El sociograma evaluó dos dimensiones: trabajo/tarea (preferencias académicas) y ocio/amistad (preferencias informales)
-- Cada alumno pudo realizar hasta 3 elecciones positivas y hasta 3 nominaciones negativas por dimensión
-
-ESTADÍSTICAS GLOBALES DEL GRUPO:
-- Media de elecciones positivas recibidas: ${mediaPos} (rango: ${rangoPos})
-- Media de nominaciones negativas recibidas: ${mediaNeg} (rango: ${rangoNeg})
-- Índice sociométrico neto medio: ${mediaNeto} (rango: ${rangoNeto})
-
-DATOS SOCIOMÉTRICOS COMPLETOS (${n} alumnos, ordenados por índice neto descendente):
+DATOS SOCIOMETRICOS DEL GRUPO (${n} alumnos, ordenados por indice neto):
 ${tablaAlumnos}
 
-SUBGRUPOS DETECTADOS (elecciones recíprocas):
-${sgsTexto2 || "No se detectaron subgrupos con elecciones recíprocas"}
+SUBGRUPOS DETECTADOS (elecciones reciprocas):
+${sgsTexto2 || "No se detectaron subgrupos con elecciones reciprocas"}
 Sin subgrupo: ${aisladosTexto2 || "Ninguno"}
 
-PERFILES DE LIDERAZGO (mayor aceptación):
-${lideresTexto}
-
-PERFILES CON RECHAZO ELEVADO (índice neto negativo):
-${rechazadosTexto}
-
-PERFIL MÁS PRÓXIMO AL AISLAMIENTO (pocas positivas Y pocas negativas):
-${aislamientoTexto}
-
 JUSTIFICACIONES DEL ALUMNADO:
-${justsTexto2.slice(0,35).join("\n") || "Sin justificaciones registradas"}
+${justsTexto2.slice(0,25).join("\n") || "Sin justificaciones registradas"}
 
-ESTRUCTURA OBLIGATORIA — escribe exactamente estos títulos (con tildes):
-1. Introducción y participación
-2. Dinámica general del grupo
+ESTRUCTURA OBLIGATORIA — escribe exactamente estos titulos:
+1. Introduccion
+2. Dinamica general del grupo
 2.1. Indicadores globales
 2.2. Liderazgo social
 2.3. Subgrupos identificados
-2.4. Perfiles con dificultades de integración
-3. Análisis cualitativo de los casos más relevantes
-3.1. Perfiles de alta aceptación
-3.2. Perfiles con dificultades de integración
-4. Conclusiones y orientaciones para la intervención
+2.4. Perfiles con dificultades de integracion
+3. Analisis cualitativo de casos relevantes
+3.1. Perfiles de alta aceptacion
+3.2. Perfiles con dificultades de integracion
+4. Conclusiones y orientaciones para la intervencion
 4.1. Conclusiones principales
-4.2. Orientaciones para la intervención
-
-INSTRUCCIONES ESPECÍFICAS POR SECCIÓN:
-
-Sección 1 (Introducción y participación): Explica el objetivo del sociograma, menciona el número de alumnos y la tasa de participación (${tasaParticipacion}%), las dos dimensiones evaluadas (trabajo y ocio), y cuántas elecciones podía hacer cada alumno. Menciona también que se recogieron justificaciones cualitativas.
-
-Sección 2.1 (Indicadores globales): Incluye los valores medios del grupo: media de elecciones positivas (${mediaPos}), media de nominaciones negativas (${mediaNeg}) e índice neto medio (${mediaNeto}), con sus rangos observados. Interpreta qué significan estos valores para la dinámica del grupo.
-
-Sección 2.2 (Liderazgo social): Analiza los alumnos con mayor número de elecciones positivas y mejor índice neto. Menciona si alguno tiene también un número notable de rechazos (posición polarizada). Usa datos concretos de cada alumno.
-
-Sección 2.3 (Subgrupos identificados): Describe cada subgrupo detectado, su tamaño y características. Indica qué porcentaje del alumnado no pertenece a ningún subgrupo y qué implicaciones tiene esto.
-
-Sección 2.4 (Perfiles con dificultades): Analiza los alumnos con índice neto negativo y el perfil más próximo al aislamiento. Incluye sus datos numéricos.
-
-Sección 3.1 (Perfiles alta aceptación): Analiza INDIVIDUALMENTE al menos los 3 alumnos con mejor índice neto. Para cada uno: datos numéricos, qué dicen sus compañeros en las justificaciones, y qué papel juega en la red social.
-
-Sección 3.2 (Perfiles con dificultades): Analiza INDIVIDUALMENTE cada alumno con rechazo elevado o aislamiento. Para cada uno: datos numéricos, justificaciones que recibe, cómo percibe él/ella a los demás, y si existe conflicto bidireccional. Si hay algún alumno próximo al aislamiento social, analízalo también de forma individual.
-
-Sección 4.1 (Conclusiones): Resume en puntos concretos los hallazgos principales: estructura del grupo, perfiles de riesgo, dinámicas de conflicto detectadas.
-
-Sección 4.2 (Orientaciones): Propón intervenciones concretas y específicas: entrevistas individuales con cada alumno en situación de riesgo, actividades grupales de cohesión, coordinación con el equipo docente, seguimiento posterior con nuevo sociograma.
+4.2. Orientaciones para la intervencion
 
 REGLAS DE FORMATO ESTRICTAS — OBLIGATORIAS:
-1. Escribe los títulos de sección exactamente como aparecen arriba, con tildes. Sin asteriscos, sin almohadillas (#).
-2. Cada párrafo debe tener mínimo 3-4 frases bien desarrolladas con conectores lógicos.
-3. Para listas usa únicamente: guión simple seguido de espacio. Ejemplo: - texto del punto.
+1. Escribe los titulos de seccion en texto plano como aparecen arriba. Sin asteriscos, sin almohadillas.
+2. Cada parrafo debe tener minimo 3-4 frases bien desarrolladas y conectadas con conectores logicos.
+3. Para listas usa unicamente este formato: guion simple seguido de espacio y el texto. Ejemplo: - texto del punto.
 4. PROHIBIDO usar asteriscos (*), almohadillas (#), guiones triples (---) o cualquier marcado Markdown.
-5. Cita siempre datos numéricos exactos: positivas recibidas, negativas recibidas, índice neto.
-6. Tono técnico, pedagógico y profesional. Nombra a los alumnos siempre por su código (AL-001, etc.).
-7. Las notas aclaratorias importantes escríbelas precedidas de: Nota:`;
+5. Cita siempre datos numericos: positivas recibidas, negativas recibidas, indice neto.
+6. Tono tecnico, pedagogico y profesional. Nombra a los alumnos por su codigo (AL-001, etc.).`;
 
   /* ============================================================
      3. LLAMADA A TU WORKER (Cloudflare)
@@ -22187,8 +22115,6 @@ async function descargarDOCX() {
     const { codigos, posRec, negRec, posEm, negEm, netos, cats, n } = charts.datos;
     const fecha = new Date().toLocaleDateString('es-ES');
     const sesionId = sesion?.id || '';
-    const totalRespondieron = Object.keys(respuestas||{}).length;
-    const tasaParticipacion = n > 0 ? Math.round(totalRespondieron/n*100) : 100;
 
     // Subgrupos
     const arrPos0 = getEleccionesPregunta(0);
@@ -22323,7 +22249,7 @@ async function descargarDOCX() {
     }));
     children.push(new Paragraph({
       alignment: AlignmentType.CENTER, spacing:{before:100,after:600},
-      children:[new TextRun({ text:`Curso académico ${new Date().getMonth()>=8 ? new Date().getFullYear() : new Date().getFullYear()-1}-${new Date().getMonth()>=8 ? new Date().getFullYear()+1 : new Date().getFullYear()}`, italics:true, size:24, color:'555555', font:'Calibri' })]
+      children:[new TextRun({ text:`Curso académico ${new Date().getFullYear()}-${new Date().getFullYear()+1}`, italics:true, size:24, color:'555555', font:'Calibri' })]
     }));
 
     // Tabla de portada
@@ -22347,7 +22273,7 @@ async function descargarDOCX() {
           new TableCell({ shading:{fill:BLUE,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,6,LBLUE), margins:{top:100,bottom:100,left:120,right:120},
             children:[new Paragraph({children:[new TextRun({text:'Participantes',bold:true,color:WHITE,size:20,font:'Calibri'})]})] }),
           new TableCell({ shading:{fill:'F2F2F2',type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,6,'BFBFBF'), margins:{top:100,bottom:100,left:120,right:120},
-            children:[new Paragraph({children:[new TextRun({text:`${n} alumnos (${tasaParticipacion}% de participación)`,size:20,font:'Calibri'})]})] })
+            children:[new Paragraph({children:[new TextRun({text:`${n} alumnos`,size:20,font:'Calibri'})]})] })
         ]}),
         new TableRow({ children:[
           new TableCell({ shading:{fill:BLUE,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,6,LBLUE), margins:{top:100,bottom:100,left:120,right:120},
@@ -22481,13 +22407,13 @@ async function descargarDOCX() {
 
     children.push(new Paragraph({ children:[new PageBreak()] }));
 
-    // ── 3. TABLA RESUMEN DE DATOS SOCIOMÉTRICOS ──────────────
-    children.push(heading('5. Tabla resumen de datos sociométricos', 1));
-    children.push(p('A continuación se recogen los indicadores cuantitativos de cada alumno. Las filas marcadas en rojo corresponden a perfiles con índice neto negativo o alto número de nominaciones negativas.', {italic:true}));
+    // ── 3. TABLA RESUMEN DE DATOS SOCIOMÉTRICOS ──────────────────
+    children.push(heading('TABLA RESUMEN DE DATOS SOCIOMÉTRICOS', 1));
+    children.push(p('A continuación se recogen los indicadores cuantitativos de cada alumno, ordenados por índice sociométrico neto descendente.', {italic:true}));
     children.push(spacer());
 
     const ordenNeto = codigos.map((_,i)=>i).sort((a,b)=>netos[b]-netos[a]);
-    const colW = [1200, 1600, 1700, 1200, 1700];
+    const colW = [1200, 1500, 1600, 1200, 1700];
     const totalW = colW.reduce((s,v)=>s+v,0);
 
     const tablaRows = [
@@ -22496,14 +22422,9 @@ async function descargarDOCX() {
         hdrCell('Elec. positivas', colW[1]),
         hdrCell('Nominaciones neg.', colW[2]),
         hdrCell('Índice neto',  colW[3]),
-        hdrCell('Subgrupo',    colW[4]),
+        hdrCell('Categoría',    colW[4]),
       ], tableHeader:true })
     ];
-
-    // Build subgroup lookup for table
-    const subgroupLookup = {};
-    sgsReales.forEach((g, gi) => g.forEach(i => { subgroupLookup[i] = `Subgrupo ${gi+1}`; }));
-    aislados.forEach(g => { subgroupLookup[g[0]] = 'Sin subgrupo'; });
 
     ordenNeto.forEach((i, rank) => {
       const neto = netos[i];
@@ -22518,17 +22439,17 @@ async function descargarDOCX() {
         new TableCell({ width:{size:colW[3],type:WidthType.DXA}, shading:{fill:bg,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100}, verticalAlign:VerticalAlign.CENTER,
           children:[new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:(neto>0?'+':'')+neto,bold:true,size:18,font:'Calibri',color:neto>0?'1a6b1a':neto<0?'b81414':'444444'})]})] }),
         new TableCell({ width:{size:colW[4],type:WidthType.DXA}, shading:{fill:bg,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100}, verticalAlign:VerticalAlign.CENTER,
-          children:[new Paragraph({children:[new TextRun({text:subgroupLookup[i]||'Sin subgrupo',size:18,font:'Calibri'})]})] }),
+          children:[new Paragraph({children:[new TextRun({text:cats[i].label,size:18,font:'Calibri'})]})] }),
       ]}));
     });
 
     children.push(new Table({ width:{size:totalW,type:WidthType.DXA}, columnWidths:colW, rows:tablaRows }));
-    children.push(p('Las filas marcadas en rojo corresponden a los alumnos con índice neto negativo. El resto de la tabla presenta una distribución mayoritariamente positiva.', {italic:true, size:18}));
+    children.push(p('Las filas marcadas en rojo corresponden a alumnos con índice sociométrico neto negativo.', {italic:true, size:18}));
 
     children.push(spacer());
 
-    // ── 4. TABLA DE SUBGRUPOS ─────────────────────────────
-    // (included as part of section 5, no new page)
+    // ── 4. TABLA DE SUBGRUPOS ─────────────────────────────────────
+    children.push(heading('SUBGRUPOS Y COHESIÓN', 1));
     const sgColW = [1400, 4000, 900, 1400];
     const sgTotal = sgColW.reduce((s,v)=>s+v,0);
     const sgRows = [
@@ -22536,14 +22457,12 @@ async function descargarDOCX() {
         hdrCell('Subgrupo',   sgColW[0]),
         hdrCell('Miembros',   sgColW[1]),
         hdrCell('Nº',         sgColW[2]),
-        hdrCell('Observaciones', sgColW[3]),
+        hdrCell('Cohesión',   sgColW[3]),
       ], tableHeader:true })
     ];
 
     sgData.forEach((sg, ri) => {
       const bg = ri%2===0 ? 'F9FBFD' : WHITE;
-      const obs = sg.cohLabel === 'Alta' ? 'Cohesión fuerte entre sus miembros.' :
-                  sg.cohLabel === 'Media' ? 'Cohesión media. Red estable.' : 'Cohesión baja. Vínculos débiles.';
       sgRows.push(new TableRow({ children:[
         new TableCell({ width:{size:sgColW[0],type:WidthType.DXA}, shading:{fill:bg,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100},
           children:[new Paragraph({children:[new TextRun({text:`Subgrupo ${sg.idx}`,bold:true,size:18,font:'Calibri'})]})] }),
@@ -22552,7 +22471,7 @@ async function descargarDOCX() {
         new TableCell({ width:{size:sgColW[2],type:WidthType.DXA}, shading:{fill:bg,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100},
           children:[new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:String(sg.n),size:18,font:'Calibri'})]})] }),
         new TableCell({ width:{size:sgColW[3],type:WidthType.DXA}, shading:{fill:bg,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100},
-          children:[new Paragraph({children:[new TextRun({text:obs,size:18,font:'Calibri'})]})] }),
+          children:[new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:`${sg.coh}% (${sg.cohLabel})`,size:18,font:'Calibri'})]})] }),
       ]}));
     });
 
@@ -22565,7 +22484,7 @@ async function descargarDOCX() {
         new TableCell({ width:{size:sgColW[2],type:WidthType.DXA}, shading:{fill:'FFF2CC',type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100},
           children:[new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:String(aislados.length),size:18,font:'Calibri'})]})] }),
         new TableCell({ width:{size:sgColW[3],type:WidthType.DXA}, shading:{fill:'FFF2CC',type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100},
-          children:[new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:'No presentan elecciones mutuas consolidadas.',size:18,font:'Calibri'})]})] }),
+          children:[new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:'—',size:18,font:'Calibri'})]})] }),
       ]}));
     }
 
@@ -22574,21 +22493,21 @@ async function descargarDOCX() {
     children.push(spacer());
     children.push(new Paragraph({ children:[new PageBreak()] }));
 
-    // ── 5. GRÁFICAS ───────────────────────────────────
-    children.push(heading('6. Resultados gráficos', 1));
+    // ── 5. GRÁFICAS ───────────────────────────────────────────────
+    children.push(heading('RESULTADOS GRÁFICOS', 1));
 
     const grafTitles = [
-      'Gráfica 1. Índice sociométrico neto por alumno',
-      'Gráfica 2. Elecciones positivas y negativas recibidas',
+      'Gráfica 1. Top alumnos — Elecciones positivas recibidas',
+      'Gráfica 2. Top alumnos — Nominaciones negativas recibidas',
       'Gráfica 3. Distribución por categoría sociométrica',
-      'Gráfica 4. Top alumnos — Nominaciones negativas recibidas'
+      'Gráfica 4. Índice sociométrico neto por alumno'
     ];
-    const grafData = [charts.neto, charts.acept, charts.cat, charts.rech];
+    const grafData = [charts.acept, charts.rech, charts.cat, charts.neto];
     const grafCaptions = [
-      `Figura 1. Índice sociométrico neto (elecciones positivas − nominaciones negativas) para cada alumno del grupo ${sesionId}.`,
-      `Figura 2. Comparativa de elecciones positivas y nominaciones negativas por alumno. Las barras permiten identificar la posición de cada alumno en la red social.`,
-      `Figura 3. Clasificación del alumnado por categoría sociométrica en función de sus índices de aceptación y rechazo.`,
-      `Figura 4. Alumnos con mayor número de nominaciones negativas recibidas en el grupo ${sesionId}.`
+      `Figura 1. Alumnos con mayor número de elecciones positivas recibidas en el grupo ${sesionId}.`,
+      `Figura 2. Alumnos con mayor número de nominaciones negativas recibidas en el grupo ${sesionId}.`,
+      `Figura 3. Clasificación del alumnado por categoría sociométrica.`,
+      `Figura 4. Índice sociométrico neto (elecciones positivas − nominaciones negativas) por alumno.`
     ];
 
     for (let gi=0; gi<4; gi++) {
@@ -22598,7 +22517,7 @@ async function descargarDOCX() {
       children.push(spacer());
     }
 
-        // ── 6. PIE DE DOCUMENTO ───────────────────────────────────────
+    // ── 6. PIE DE DOCUMENTO ───────────────────────────────────────
     children.push(new Paragraph({ children:[new PageBreak()] }));
     children.push(p('Este informe ha sido elaborado por el Departamento de Orientación con carácter confidencial. Los datos están anonimizados mediante códigos de alumno y su uso debe limitarse al equipo educativo responsable del grupo.', { italic:true, size:18, color:'555555' }));
     children.push(spacer());
