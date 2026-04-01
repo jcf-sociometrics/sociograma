@@ -8,6 +8,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Outfit+Mono&family=Fraunces:ital,wght@0,400;0,700;1,400&display=swap');
 
@@ -887,12 +888,7 @@ textarea { resize: vertical; min-height: 60px; }
         <div class="card-sub">La IA analiza todos los datos y genera un informe pedagógico profesional en español, destacando los 3 alumnos con mayor aceptación y los 3 con mayor riesgo/rechazo, con justificaciones de sus compañeros.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-blue" id="btn-generar-informe" onclick="generarInforme()">✨ Generar informe</button>
-<button class="btn btn-green btn-sm" id="btn-pdf-real"
-        onclick="descargarPDF_REAL()" style="display:none;">
-    📄 Descargar PDF REAL
-</button>
-
-          <button class="btn btn-ghost btn-sm" id="btn-docx" onclick="descargarDOCX()" style="display:none;">📝 Descargar Word</button>
+          <button class="btn btn-green btn-sm" id="btn-docx" onclick="descargarDOCX()" style="display:none;">📄 Descargar informe Word</button>
         </div>
       </div>
       <div id="informe-output" style="display:none;"></div>
@@ -1890,7 +1886,6 @@ ${topRech.map(a => `• ${a.cod} (${a.negRec} negativas)`).join("\n")}
     /* ------------------------------------------------------------
        6. ACTIVAR BOTONES (solo PDF REAL + DOCX)
        ------------------------------------------------------------ */
-    document.getElementById("btn-pdf-real").style.display = "inline-flex";
     document.getElementById("btn-docx").style.display = "inline-flex";
 
   } catch (e) {
@@ -1902,547 +1897,463 @@ ${topRech.map(a => `• ${a.cod} (${a.negRec} negativas)`).join("\n")}
   btn.innerHTML = "✨ Regenerar informe";
 }
 /* ============================================================
-   PDF REAL PROFESIONAL — VERSIÓN CORREGIDA Y FUNCIONAL
+   GENERACIÓN DE GRÁFICAS PARA EL DOCX
    ============================================================ */
+
+async function generarGraficasParaDocx() {
+  const codigos = sesion.codigos;
+  const n = codigos.length;
+  const posRec = new Array(n).fill(0), negRec = new Array(n).fill(0);
+  const posEm  = new Array(n).fill(0), negEm  = new Array(n).fill(0);
+
+  PREGUNTAS_SOCIO.forEach((p, pi) => {
+    const arr = getEleccionesPregunta(pi);
+    arr.forEach((elecs, i) => {
+      if (p.tipo === 'pos') posEm[i] += elecs.length; else negEm[i] += elecs.length;
+      elecs.forEach(j => { if (p.tipo==='pos') posRec[j]++; else negRec[j]++; });
+    });
+  });
+
+  const netos = codigos.map((_, i) => posRec[i] - negRec[i]);
+  const cats  = codigos.map((_, i) => categorizarAlumno(netos[i], posRec[i], negRec[i], n));
+
+  // Destruir instancias previas
+  ['chart-top-acept','chart-top-rech','chart-categorias','chart-radar'].forEach(id => {
+    const ex = Chart.getChart(id); if (ex) ex.destroy();
+  });
+
+  const topAcept = codigos.map((cod,i)=>({cod,val:posRec[i]})).sort((a,b)=>b.val-a.val).slice(0,8);
+  const topRech  = codigos.map((cod,i)=>({cod,val:negRec[i]})).sort((a,b)=>b.val-a.val).slice(0,8);
+  const catCount = {}; cats.forEach(c=>{ catCount[c.label]=(catCount[c.label]||0)+1; });
+  const catColors = {'Estrella social':'#3fb950','Rechazado/a':'#f85149','Aislado/a':'#7d8590','En riesgo':'#d29922','Bien integrado/a':'#58a6ff','Posición media':'#bc8cff'};
+  const ordenNeto = codigos.map((cod,i)=>({cod,neto:netos[i]})).sort((a,b)=>b.neto-a.neto);
+
+  function makeChart(id, config) {
+    const canvas = document.getElementById(id);
+    canvas.width = 700; canvas.height = 320;
+    return new Chart(canvas.getContext('2d'), config);
+  }
+
+  const chartBase = { responsive: false, animation: false,
+    plugins: { legend: { display: false } },
+    scales: { x: { ticks:{color:'#222',font:{size:11}}, grid:{color:'rgba(0,0,0,0.07)'} },
+              y: { beginAtZero:true, ticks:{color:'#222'}, grid:{color:'rgba(0,0,0,0.07)'} } }
+  };
+
+  makeChart('chart-top-acept', { type:'bar', data:{
+    labels: topAcept.map(x=>x.cod),
+    datasets:[{ label:'Elecciones positivas recibidas', data:topAcept.map(x=>x.val),
+      backgroundColor:'rgba(63,185,80,0.75)', borderColor:'#29a341', borderWidth:1 }]
+  }, options:{...chartBase, plugins:{...chartBase.plugins, legend:{display:true,labels:{color:'#222'}}}} });
+
+  makeChart('chart-top-rech', { type:'bar', data:{
+    labels: topRech.map(x=>x.cod),
+    datasets:[{ label:'Nominaciones negativas recibidas', data:topRech.map(x=>x.val),
+      backgroundColor:'rgba(248,81,73,0.75)', borderColor:'#d13c36', borderWidth:1 }]
+  }, options:{...chartBase, plugins:{...chartBase.plugins, legend:{display:true,labels:{color:'#222'}}}} });
+
+  makeChart('chart-categorias', { type:'pie', data:{
+    labels: Object.keys(catCount),
+    datasets:[{ data:Object.values(catCount),
+      backgroundColor:Object.keys(catCount).map(k=>catColors[k]||'#888') }]
+  }, options:{ responsive:false, animation:false,
+    plugins:{ legend:{ display:true, position:'right', labels:{color:'#222',font:{size:11}} } } }
+  });
+
+  makeChart('chart-radar', { type:'bar', data:{
+    labels: ordenNeto.map(x=>x.cod),
+    datasets:[{ label:'Índice neto', data:ordenNeto.map(x=>x.neto),
+      backgroundColor: ordenNeto.map(x=>x.neto>=0?'rgba(63,185,80,0.7)':'rgba(248,81,73,0.7)'),
+      borderColor: ordenNeto.map(x=>x.neto>=0?'#3fb950':'#f85149'), borderWidth:1 }]
+  }, options:{...chartBase, plugins:{...chartBase.plugins, legend:{display:true,labels:{color:'#222'}}}} });
+
+  // Dar tiempo a Chart.js para renderizar
+  await new Promise(r => setTimeout(r, 600));
+
+  return {
+    acept:  document.getElementById('chart-top-acept').toDataURL('image/png').split(',')[1],
+    rech:   document.getElementById('chart-top-rech').toDataURL('image/png').split(',')[1],
+    cat:    document.getElementById('chart-categorias').toDataURL('image/png').split(',')[1],
+    neto:   document.getElementById('chart-radar').toDataURL('image/png').split(',')[1],
+    datos:  { codigos, posRec, negRec, posEm, negEm, netos, cats, n }
+  };
+}
 
 /* ============================================================
-   1. FUNCIÓN QUE GENERA LAS GRÁFICAS DEL ANEXO PARA EL PDF
+   GENERAR DOCX PROFESIONAL — igual que el informe de referencia
    ============================================================ */
+async function descargarDOCX() {
+  if (!informeTexto) { showToast('Primero genera el informe.'); return; }
+  const btn = document.getElementById('btn-docx');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Generando documento…';
 
-//--------------------------------------------------------------------
-// GRÁFICAS REALES PARA EL PDF — VERSIÓN FINAL (Chart.js + await)
-//--------------------------------------------------------------------
-let pdfCharts = {};
+  try {
+    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+            AlignmentType, HeadingLevel, BorderStyle, WidthType, ShadingType,
+            VerticalAlign, PageNumber, Header, Footer, ImageRun,
+            TableOfContents, LevelFormat, PageBreak } = docx;
 
-function destroyPdfChart(id) {
-    if (pdfCharts[id]) {
-        pdfCharts[id].destroy();
-        delete pdfCharts[id];
+    // ── Generar gráficas ─────────────────────────────────────────
+    const charts = await generarGraficasParaDocx();
+    const { codigos, posRec, negRec, posEm, negEm, netos, cats, n } = charts.datos;
+    const fecha = new Date().toLocaleDateString('es-ES');
+    const sesionId = sesion?.id || '';
+
+    // Subgrupos
+    const arrPos0 = getEleccionesPregunta(0);
+    const vis = new Array(n).fill(false);
+    const sgs = [];
+    const bfsR = (s) => {
+      const g=[],q=[s]; vis[s]=true;
+      while(q.length){const nd=q.shift();g.push(nd);for(let j=0;j<n;j++){if(!vis[j]&&(arrPos0[nd]||[]).includes(j)&&(arrPos0[j]||[]).includes(nd)){vis[j]=true;q.push(j);}}}
+      return g;
+    };
+    for(let i=0;i<n;i++) if(!vis[i]) sgs.push(bfsR(i));
+    sgs.sort((a,b)=>b.length-a.length);
+    const sgsReales = sgs.filter(g=>g.length>1);
+    const aislados  = sgs.filter(g=>g.length===1);
+
+    // Cálculo cohesión subgrupos
+    const sgData = sgsReales.map((g, gi) => {
+      let recip=0; const pos=g.length*(g.length-1)/2;
+      g.forEach(i=>g.forEach(j=>{if(i<j&&(arrPos0[i]||[]).includes(j)&&(arrPos0[j]||[]).includes(i))recip++;}));
+      const coh = pos>0?Math.round(recip/pos*100):0;
+      const cohLabel = coh>=60?'Alta':coh>=30?'Media':'Baja';
+      return { idx:gi+1, members:g.map(i=>codigos[i]), coh, cohLabel, n:g.length };
+    });
+
+    // ── Helpers de formato ───────────────────────────────────────
+    const BLUE  = '1e4080';
+    const LBLUE = '2E75B6';
+    const GRAY  = 'D6DCE4';
+    const WHITE = 'FFFFFF';
+    const RED_BG= 'FFE0E0';
+
+    const border = (style=BorderStyle.SINGLE, sz=6, col='BFBFBF') =>
+      ({ style, size: sz, color: col });
+    const allBorders = (style, sz, col) =>
+      ({ top:border(style,sz,col), bottom:border(style,sz,col),
+         left:border(style,sz,col), right:border(style,sz,col) });
+
+    const cell = (text, opts={}) => new TableCell({
+      width: opts.width || undefined,
+      shading: opts.bg ? { fill: opts.bg, type: ShadingType.CLEAR } : undefined,
+      verticalAlign: VerticalAlign.CENTER,
+      borders: allBorders(BorderStyle.SINGLE, 4, 'BFBFBF'),
+      margins: { top:80, bottom:80, left:100, right:100 },
+      children: [new Paragraph({
+        alignment: opts.align || AlignmentType.LEFT,
+        children: [new TextRun({
+          text: String(text),
+          bold: !!opts.bold,
+          color: opts.color || '000000',
+          size: opts.size || 18,
+          font: 'Calibri'
+        })]
+      })]
+    });
+
+    const hdrCell = (text, widthDxa) => new TableCell({
+      width: { size: widthDxa, type: WidthType.DXA },
+      shading: { fill: BLUE, type: ShadingType.CLEAR },
+      verticalAlign: VerticalAlign.CENTER,
+      borders: allBorders(BorderStyle.SINGLE, 6, LBLUE),
+      margins: { top:80, bottom:80, left:100, right:100 },
+      children: [new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [new TextRun({ text: String(text), bold:true, color:WHITE, size:18, font:'Calibri' })]
+      })]
+    });
+
+    function dataRow(cells, bg) {
+      return new TableRow({ children: cells.map(c => typeof c === 'object' && c._cell ? c :
+        new TableCell({
+          shading: bg ? { fill: bg, type: ShadingType.CLEAR } : undefined,
+          verticalAlign: VerticalAlign.CENTER,
+          borders: allBorders(BorderStyle.SINGLE, 4, 'BFBFBF'),
+          margins: { top:60, bottom:60, left:100, right:100 },
+          children: [new Paragraph({
+            alignment: typeof c === 'number' ? AlignmentType.CENTER : AlignmentType.LEFT,
+            children: [new TextRun({ text: String(c ?? ''), size:18, font:'Calibri',
+              color: '000000' })]
+          })]
+        })
+      )});
     }
-}
 
-async function waitForChart(chart) {
-    // Chart.js 4: update() devuelve una promesa
-    await chart.update();
-    // pequeño respiro para asegurar render final en canvases ocultos
-    await new Promise(res => setTimeout(res, 80));
-}
+    const p = (text, opts={}) => new Paragraph({
+      alignment: opts.align || AlignmentType.JUSTIFIED,
+      spacing: { before: opts.before||100, after: opts.after||100, line: 276 },
+      children: [new TextRun({
+        text: String(text),
+        bold: !!opts.bold,
+        italics: !!opts.italic,
+        size: opts.size || 20,
+        color: opts.color || '000000',
+        font: opts.font || 'Calibri'
+      })]
+    });
 
-async function renderGraficasAnexo() {
-    const codigos = sesion.codigos;
-    const n = codigos.length;
+    const heading = (text, level=1) => new Paragraph({
+      heading: level===1 ? HeadingLevel.HEADING_1 : HeadingLevel.HEADING_2,
+      spacing: { before:240, after:120 },
+      children: [new TextRun({
+        text, bold:true, size: level===1?26:22,
+        color: level===1 ? BLUE : LBLUE, font:'Calibri'
+      })]
+    });
 
-    const { posRec, negRec, posEm, negEm } = calcTotales();
-    const netos = codigos.map((_, i) => posRec[i] - negRec[i]);
+    const spacer = () => new Paragraph({ children:[new TextRun('')], spacing:{before:80,after:80} });
 
-    // TOP ACEPTACIÓN
-    const topAcept = [...codigos.map((cod, i) => ({
-        cod, val: posRec[i]
-    }))].sort((a,b)=>b.val-a.val).slice(0,5);
+    // ── Imagen helper ────────────────────────────────────────────
+    async function imgFromB64(b64, w, h) {
+      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      return new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before:120, after:120 },
+        children: [new ImageRun({ data: bytes, transformation:{ width:w, height:h }, type:'png' })]
+      });
+    }
 
-    // TOP RECHAZO
-    const topRech = [...codigos.map((cod, i) => ({
-        cod, val: negRec[i]
-    }))].sort((a,b)=>b.val-a.val).slice(0,5);
+    // ══════════════════════════════════════════════════════════════
+    // CONTENIDO DEL DOCUMENTO
+    // ══════════════════════════════════════════════════════════════
+    const children = [];
 
-    // CATEGORÍAS
-    const cats = contarCategorias();
-    const catLabels = Object.keys(cats);
-    const catValues = Object.values(cats);
+    // ── 1. PORTADA ───────────────────────────────────────────────
+    children.push(new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before:1200, after:200 },
+      children: [new TextRun({ text:'INFORME DE SOCIOGRAMA', bold:true, size:52, color:BLUE, font:'Calibri' })]
+    }));
+    children.push(new Paragraph({
+      alignment: AlignmentType.CENTER, spacing:{before:100,after:100},
+      children:[new TextRun({ text:`GRUPO ${sesionId}`, bold:true, size:36, color:LBLUE, font:'Calibri' })]
+    }));
+    children.push(new Paragraph({
+      alignment: AlignmentType.CENTER, spacing:{before:100,after:600},
+      children:[new TextRun({ text:`Curso académico ${new Date().getFullYear()}-${new Date().getFullYear()+1}`, italics:true, size:24, color:'555555', font:'Calibri' })]
+    }));
 
-    // PERFIL GLOBAL
-    const perfil = calcularPerfilGlobal();
+    // Tabla de portada
+    children.push(new Table({
+      width: { size:8500, type:WidthType.DXA },
+      columnWidths: [2500, 6000],
+      rows: [
+        new TableRow({ children:[
+          new TableCell({ shading:{fill:BLUE,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,6,LBLUE), margins:{top:100,bottom:100,left:120,right:120},
+            children:[new Paragraph({children:[new TextRun({text:'Centro',bold:true,color:WHITE,size:20,font:'Calibri'})]})] }),
+          new TableCell({ shading:{fill:'F2F2F2',type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,6,'BFBFBF'), margins:{top:100,bottom:100,left:120,right:120},
+            children:[new Paragraph({children:[new TextRun({text:`${sesionId} — Departamento de Orientación`,size:20,font:'Calibri'})]})] })
+        ]}),
+        new TableRow({ children:[
+          new TableCell({ shading:{fill:BLUE,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,6,LBLUE), margins:{top:100,bottom:100,left:120,right:120},
+            children:[new Paragraph({children:[new TextRun({text:'Grupo',bold:true,color:WHITE,size:20,font:'Calibri'})]})] }),
+          new TableCell({ shading:{fill:WHITE,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,6,'BFBFBF'), margins:{top:100,bottom:100,left:120,right:120},
+            children:[new Paragraph({children:[new TextRun({text:sesionId,size:20,font:'Calibri'})]})] })
+        ]}),
+        new TableRow({ children:[
+          new TableCell({ shading:{fill:BLUE,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,6,LBLUE), margins:{top:100,bottom:100,left:120,right:120},
+            children:[new Paragraph({children:[new TextRun({text:'Participantes',bold:true,color:WHITE,size:20,font:'Calibri'})]})] }),
+          new TableCell({ shading:{fill:'F2F2F2',type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,6,'BFBFBF'), margins:{top:100,bottom:100,left:120,right:120},
+            children:[new Paragraph({children:[new TextRun({text:`${n} alumnos`,size:20,font:'Calibri'})]})] })
+        ]}),
+        new TableRow({ children:[
+          new TableCell({ shading:{fill:BLUE,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,6,LBLUE), margins:{top:100,bottom:100,left:120,right:120},
+            children:[new Paragraph({children:[new TextRun({text:'Elaborado por',bold:true,color:WHITE,size:20,font:'Calibri'})]})] }),
+          new TableCell({ shading:{fill:WHITE,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,6,'BFBFBF'), margins:{top:100,bottom:100,left:120,right:120},
+            children:[new Paragraph({children:[new TextRun({text:'Departamento de Orientación',size:20,font:'Calibri'})]})] })
+        ]}),
+        new TableRow({ children:[
+          new TableCell({ shading:{fill:BLUE,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,6,LBLUE), margins:{top:100,bottom:100,left:120,right:120},
+            children:[new Paragraph({children:[new TextRun({text:'Carácter',bold:true,color:WHITE,size:20,font:'Calibri'})]})] }),
+          new TableCell({ shading:{fill:'FFF2CC',type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,6,'BFBFBF'), margins:{top:100,bottom:100,left:120,right:120},
+            children:[new Paragraph({children:[new TextRun({text:'CONFIDENCIAL — Uso exclusivo del equipo educativo',bold:true,color:'7F6000',size:20,font:'Calibri'})]})] })
+        ]})
+      ]
+    }));
 
+    children.push(new Paragraph({ children:[new PageBreak()] }));
 
-    //----------------------------------------------------------------
-    // GRÁFICA 1 — TOP ACEPTACIÓN
-    //----------------------------------------------------------------
-    destroyPdfChart("chart-top-acept");
-    const c1 = document.getElementById("chart-top-acept");
-    c1.width = 600; c1.height = 300;
+    // ── 2. TEXTO DEL INFORME (parseado por secciones) ─────────────
+    const SECTION_RE = /^(\d+[\.\d]*\.?\s+)?([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜA-Za-záéíóúñü\s\d\.\-\:\/]{3,80})$/;
+    const SUBSEC_RE  = /^(\d+\.\d+\.?\s+)/;
 
-    pdfCharts["chart-top-acept"] = new Chart(c1.getContext("2d"), {
-        type: "bar",
-        data: {
-            labels: topAcept.map(x => x.cod),
-            datasets: [{
-                label: "Positivas recibidas",
-                data: topAcept.map(x => x.val),
-                backgroundColor: "#3fb950",
-                borderColor: "#29a341",
-                borderWidth: 1
-            }]
+    const lines = informeTexto.split('\n');
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) { children.push(spacer()); continue; }
+      const isMain = SECTION_RE.test(line) && line.length < 90 && /^[A-ZÁÉÍÓÚÑÜ0-9]/.test(line) &&
+                     !/[a-z]{3}/.test(line.replace(/[^a-záéíóúñü]/gi,'').substring(0,8));
+      const isSub  = SUBSEC_RE.test(line) && line.length < 80;
+      if (isMain || (line === line.toUpperCase() && line.length > 4 && line.length < 80)) {
+        children.push(heading(line, 1));
+      } else if (isSub) {
+        children.push(heading(line, 2));
+      } else if (line.startsWith('•') || line.startsWith('-') || line.startsWith('*')) {
+        children.push(new Paragraph({
+          alignment: AlignmentType.JUSTIFIED,
+          spacing: { before:60, after:60, line:276 },
+          bullet: { level:0 },
+          children:[new TextRun({ text: line.replace(/^[\•\-\*]\s*/,''), size:20, font:'Calibri' })]
+        }));
+      } else {
+        children.push(p(line));
+      }
+    }
+
+    children.push(new Paragraph({ children:[new PageBreak()] }));
+
+    // ── 3. TABLA RESUMEN DE DATOS SOCIOMÉTRICOS ──────────────────
+    children.push(heading('TABLA RESUMEN DE DATOS SOCIOMÉTRICOS', 1));
+    children.push(p('A continuación se recogen los indicadores cuantitativos de cada alumno, ordenados por índice sociométrico neto descendente.', {italic:true}));
+    children.push(spacer());
+
+    const ordenNeto = codigos.map((_,i)=>i).sort((a,b)=>netos[b]-netos[a]);
+    const colW = [1200, 1500, 1600, 1200, 1700];
+    const totalW = colW.reduce((s,v)=>s+v,0);
+
+    const tablaRows = [
+      new TableRow({ children:[
+        hdrCell('Código',       colW[0]),
+        hdrCell('Elec. positivas', colW[1]),
+        hdrCell('Nominaciones neg.', colW[2]),
+        hdrCell('Índice neto',  colW[3]),
+        hdrCell('Categoría',    colW[4]),
+      ], tableHeader:true })
+    ];
+
+    ordenNeto.forEach((i, rank) => {
+      const neto = netos[i];
+      const bg = neto < 0 ? RED_BG : (rank%2===0 ? 'F9FBFD' : WHITE);
+      tablaRows.push(new TableRow({ children: [
+        new TableCell({ width:{size:colW[0],type:WidthType.DXA}, shading:{fill:bg,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100}, verticalAlign:VerticalAlign.CENTER,
+          children:[new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:codigos[i],bold:true,size:18,font:'Calibri'})]})] }),
+        new TableCell({ width:{size:colW[1],type:WidthType.DXA}, shading:{fill:bg,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100}, verticalAlign:VerticalAlign.CENTER,
+          children:[new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:String(posRec[i]),size:18,font:'Calibri',color:'1a6b1a'})]})] }),
+        new TableCell({ width:{size:colW[2],type:WidthType.DXA}, shading:{fill:bg,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100}, verticalAlign:VerticalAlign.CENTER,
+          children:[new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:String(negRec[i]),size:18,font:'Calibri',color:'b81414'})]})] }),
+        new TableCell({ width:{size:colW[3],type:WidthType.DXA}, shading:{fill:bg,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100}, verticalAlign:VerticalAlign.CENTER,
+          children:[new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:(neto>0?'+':'')+neto,bold:true,size:18,font:'Calibri',color:neto>0?'1a6b1a':neto<0?'b81414':'444444'})]})] }),
+        new TableCell({ width:{size:colW[4],type:WidthType.DXA}, shading:{fill:bg,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100}, verticalAlign:VerticalAlign.CENTER,
+          children:[new Paragraph({children:[new TextRun({text:cats[i].label,size:18,font:'Calibri'})]})] }),
+      ]}));
+    });
+
+    children.push(new Table({ width:{size:totalW,type:WidthType.DXA}, columnWidths:colW, rows:tablaRows }));
+    children.push(p('Las filas marcadas en rojo corresponden a alumnos con índice sociométrico neto negativo.', {italic:true, size:18}));
+
+    children.push(spacer());
+
+    // ── 4. TABLA DE SUBGRUPOS ─────────────────────────────────────
+    children.push(heading('SUBGRUPOS Y COHESIÓN', 1));
+    const sgColW = [1400, 4000, 900, 1400];
+    const sgTotal = sgColW.reduce((s,v)=>s+v,0);
+    const sgRows = [
+      new TableRow({ children:[
+        hdrCell('Subgrupo',   sgColW[0]),
+        hdrCell('Miembros',   sgColW[1]),
+        hdrCell('Nº',         sgColW[2]),
+        hdrCell('Cohesión',   sgColW[3]),
+      ], tableHeader:true })
+    ];
+
+    sgData.forEach((sg, ri) => {
+      const bg = ri%2===0 ? 'F9FBFD' : WHITE;
+      sgRows.push(new TableRow({ children:[
+        new TableCell({ width:{size:sgColW[0],type:WidthType.DXA}, shading:{fill:bg,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100},
+          children:[new Paragraph({children:[new TextRun({text:`Subgrupo ${sg.idx}`,bold:true,size:18,font:'Calibri'})]})] }),
+        new TableCell({ width:{size:sgColW[1],type:WidthType.DXA}, shading:{fill:bg,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100},
+          children:[new Paragraph({children:[new TextRun({text:sg.members.join(', '),size:18,font:'Calibri'})]})] }),
+        new TableCell({ width:{size:sgColW[2],type:WidthType.DXA}, shading:{fill:bg,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100},
+          children:[new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:String(sg.n),size:18,font:'Calibri'})]})] }),
+        new TableCell({ width:{size:sgColW[3],type:WidthType.DXA}, shading:{fill:bg,type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100},
+          children:[new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:`${sg.coh}% (${sg.cohLabel})`,size:18,font:'Calibri'})]})] }),
+      ]}));
+    });
+
+    if (aislados.length) {
+      sgRows.push(new TableRow({ children:[
+        new TableCell({ width:{size:sgColW[0],type:WidthType.DXA}, shading:{fill:'FFF2CC',type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100},
+          children:[new Paragraph({children:[new TextRun({text:'Sin subgrupo',italics:true,size:18,font:'Calibri'})]})] }),
+        new TableCell({ width:{size:sgColW[1],type:WidthType.DXA}, shading:{fill:'FFF2CC',type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100},
+          children:[new Paragraph({children:[new TextRun({text:aislados.map(g=>codigos[g[0]]).join(', '),size:18,font:'Calibri'})]})] }),
+        new TableCell({ width:{size:sgColW[2],type:WidthType.DXA}, shading:{fill:'FFF2CC',type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100},
+          children:[new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:String(aislados.length),size:18,font:'Calibri'})]})] }),
+        new TableCell({ width:{size:sgColW[3],type:WidthType.DXA}, shading:{fill:'FFF2CC',type:ShadingType.CLEAR}, borders:allBorders(BorderStyle.SINGLE,4,'BFBFBF'), margins:{top:60,bottom:60,left:100,right:100},
+          children:[new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:'—',size:18,font:'Calibri'})]})] }),
+      ]}));
+    }
+
+    children.push(new Table({ width:{size:sgTotal,type:WidthType.DXA}, columnWidths:sgColW, rows:sgRows }));
+
+    children.push(spacer());
+    children.push(new Paragraph({ children:[new PageBreak()] }));
+
+    // ── 5. GRÁFICAS ───────────────────────────────────────────────
+    children.push(heading('RESULTADOS GRÁFICOS', 1));
+
+    const grafTitles = [
+      'Gráfica 1. Top alumnos — Elecciones positivas recibidas',
+      'Gráfica 2. Top alumnos — Nominaciones negativas recibidas',
+      'Gráfica 3. Distribución por categoría sociométrica',
+      'Gráfica 4. Índice sociométrico neto por alumno'
+    ];
+    const grafData = [charts.acept, charts.rech, charts.cat, charts.neto];
+    const grafCaptions = [
+      `Figura 1. Alumnos con mayor número de elecciones positivas recibidas en el grupo ${sesionId}.`,
+      `Figura 2. Alumnos con mayor número de nominaciones negativas recibidas en el grupo ${sesionId}.`,
+      `Figura 3. Clasificación del alumnado por categoría sociométrica.`,
+      `Figura 4. Índice sociométrico neto (elecciones positivas − nominaciones negativas) por alumno.`
+    ];
+
+    for (let gi=0; gi<4; gi++) {
+      children.push(heading(grafTitles[gi], 2));
+      children.push(await imgFromB64(grafData[gi], 500, 230));
+      children.push(p(grafCaptions[gi], {italic:true, size:18, align:AlignmentType.CENTER}));
+      children.push(spacer());
+    }
+
+    // ── 6. PIE DE DOCUMENTO ───────────────────────────────────────
+    children.push(new Paragraph({ children:[new PageBreak()] }));
+    children.push(p('Este informe ha sido elaborado por el Departamento de Orientación con carácter confidencial. Los datos están anonimizados mediante códigos de alumno y su uso debe limitarse al equipo educativo responsable del grupo.', { italic:true, size:18, color:'555555' }));
+    children.push(spacer());
+    children.push(p(`Generado el ${fecha} — Sesión: ${sesionId}`, { italic:true, size:16, color:'888888', align:AlignmentType.RIGHT }));
+
+    // ── Construir y descargar ─────────────────────────────────────
+    const doc = new Document({
+      styles: {
+        default: { document: { run:{ font:'Calibri', size:20 } } },
+        paragraphStyles: [
+          { id:'Heading1', name:'Heading 1', basedOn:'Normal', next:'Normal', quickFormat:true,
+            run:{ size:26, bold:true, color:BLUE, font:'Calibri' },
+            paragraph:{ spacing:{before:280,after:120}, outlineLevel:0 } },
+          { id:'Heading2', name:'Heading 2', basedOn:'Normal', next:'Normal', quickFormat:true,
+            run:{ size:22, bold:true, color:LBLUE, font:'Calibri' },
+            paragraph:{ spacing:{before:180,after:80}, outlineLevel:1 } },
+        ]
+      },
+      sections: [{
+        properties: {
+          page: { size:{width:11906,height:16838}, margin:{top:1440,right:1440,bottom:1440,left:1440} }
         },
-        options: {
-            responsive: false,
-            plugins: { legend: { display: false } },
-            scales: {
-                x: { ticks: { color: "#fff" }},
-                y: { beginAtZero: true, ticks: { color: "#fff" }}
-            }
-        }
-    });
-    await waitForChart(pdfCharts["chart-top-acept"]);
-
-
-    //----------------------------------------------------------------
-    // GRÁFICA 2 — TOP RECHAZO
-    //----------------------------------------------------------------
-    destroyPdfChart("chart-top-rech");
-    const c2 = document.getElementById("chart-top-rech");
-    c2.width = 600; c2.height = 300;
-
-    pdfCharts["chart-top-rech"] = new Chart(c2.getContext("2d"), {
-        type: "bar",
-        data: {
-            labels: topRech.map(x => x.cod),
-            datasets: [{
-                label: "Negativas recibidas",
-                data: topRech.map(x => x.val),
-                backgroundColor: "#f85149",
-                borderColor: "#d13c36",
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: false,
-            plugins: { legend: { display: false } },
-            scales: {
-                x: { ticks: { color: "#fff" }},
-                y: { beginAtZero: true, ticks: { color: "#fff" }}
-            }
-        }
-    });
-    await waitForChart(pdfCharts["chart-top-rech"]);
-
-
-    //----------------------------------------------------------------
-    // GRÁFICA 3 — CATEGORÍAS (Pie)
-    //----------------------------------------------------------------
-    destroyPdfChart("chart-categorias");
-    const c3 = document.getElementById("chart-categorias");
-    c3.width = 600; c3.height = 300;
-
-    pdfCharts["chart-categorias"] = new Chart(c3.getContext("2d"), {
-        type: "pie",
-        data: {
-            labels: catLabels,
-            datasets: [{
-                data: catValues,
-                backgroundColor: [
-                    "#3fb950",
-                    "#f85149",
-                    "#7d8590",
-                    "#d29922",
-                    "#58a6ff",
-                    "#bc8cff"
-                ]
-            }]
-        },
-        options: {
-            responsive: false,
-            plugins: { legend: { labels: { color: "#fff" }}}
-        }
-    });
-    await waitForChart(pdfCharts["chart-categorias"]);
-
-
-    //----------------------------------------------------------------
-    // GRÁFICA 4 — RADAR (perfil sociométrico global)
-    //----------------------------------------------------------------
-    destroyPdfChart("chart-radar");
-    const c4 = document.getElementById("chart-radar");
-    c4.width = 600; c4.height = 300;
-
-    pdfCharts["chart-radar"] = new Chart(c4.getContext("2d"), {
-        type: "radar",
-        data: {
-            labels: [
-                "TL positivos",
-                "TL negativos",
-                "TG positivos",
-                "TG negativos",
-                "Recíprocas",
-                "Densidad (%)"
-            ],
-            datasets: [{
-                label: "Perfil grupal",
-                data: [
-                    perfil.tl_pos,
-                    perfil.tl_neg,
-                    perfil.tg_pos,
-                    perfil.tg_neg,
-                    perfil.recip,
-                    perfil.densidad
-                ],
-                backgroundColor: "rgba(88,166,255,0.2)",
-                borderColor: "#58a6ff",
-                borderWidth: 2,
-                pointBackgroundColor: "#58a6ff"
-            }]
-        },
-        options: {
-            responsive: false,
-            scales: {
-                r: {
-                    grid: { color: "rgba(255,255,255,0.2)" },
-                    pointLabels: { color: "#fff" },
-                    ticks: { color: "#fff" }
-                }
-            },
-            plugins: {
-                legend: { labels: { color: "#fff" }}
-            }
-        }
-    });
-    await waitForChart(pdfCharts["chart-radar"]);
-}
-
-
-async function generarGraficasEstadisticas() {
-//--------------------------------------------------------------------
-// GRÁFICAS REALES PARA EL PDF (Chart.js)
-//--------------------------------------------------------------------
-
-// Destruir instancias antiguas si existen
-let pdfCharts = {};
-
-function destroyPdfChart(id) {
-    if (pdfCharts[id]) {
-        pdfCharts[id].destroy();
-        delete pdfCharts[id];
-    }
-}
-
-async function renderGraficasAnexo() {
-    // Obtener métricas básicas
-    const codigos = sesion.codigos;
-    const n = codigos.length;
-
-    const { posRec, negRec, posEm, negEm } = calcTotales();
-    const netos = codigos.map((_, i) => posRec[i] - negRec[i]);
-
-    // TOP ACEPTACIÓN
-    const topAcept = [...codigos.map((cod, i) => ({
-        cod, val: posRec[i]
-    }))].sort((a,b)=>b.val-a.val).slice(0,5);
-
-    // TOP RECHAZO
-    const topRech = [...codigos.map((cod, i) => ({
-        cod, val: negRec[i]
-    }))].sort((a,b)=>b.val-a.val).slice(0,5);
-
-    // CATEGORÍAS
-    const cats = contarCategorias();
-    const catLabels = Object.keys(cats);
-    const catValues = Object.values(cats);
-
-    // PERFIL GLOBAL
-    const perfil = calcularPerfilGlobal();
-
-
-    //----------------------------------------------------------------
-    // GRÁFICA 1 — TOP ACEPTACIÓN (barras)
-    //----------------------------------------------------------------
-    destroyPdfChart("chart-top-acept");
-const canvas1 = document.getElementById("chart-top-acept");
-canvas1.width = 600;
-canvas1.height = 300;
-    pdfCharts["chart-top-acept"] = new Chart(
-        document.getElementById("chart-top-acept").getContext("2d"),
-        {
-            type: "bar",
-            data: {
-                labels: topAcept.map(x => x.cod),
-                datasets: [{
-                    label: "Positivas recibidas",
-                    data: topAcept.map(x => x.val),
-                    backgroundColor: "#3fb950",
-                    borderColor: "#29a341",
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { ticks: { color: "#fff" }},
-                    y: { beginAtZero: true, ticks: { color: "#fff" }}
-                }
-            }
-        }
-    );
-
-    //----------------------------------------------------------------
-    // GRÁFICA 2 — TOP RECHAZO (barras)
-    //----------------------------------------------------------------
-    destroyPdfChart("chart-top-rech");
-const canvas2 = document.getElementById("chart-top-rech");
-canvas2.width = 600;
-canvas2.height = 300;
-    pdfCharts["chart-top-rech"] = new Chart(
-        document.getElementById("chart-top-rech").getContext("2d"),
-        {
-            type: "bar",
-            data: {
-                labels: topRech.map(x => x.cod),
-                datasets: [{
-                    label: "Negativas recibidas",
-                    data: topRech.map(x => x.val),
-                    backgroundColor: "#f85149",
-                    borderColor: "#d13c36",
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { ticks: { color: "#fff" }},
-                    y: { beginAtZero: true, ticks: { color: "#fff" }}
-                }
-            }
-        }
-    );
-
-    //----------------------------------------------------------------
-    // GRÁFICA 3 — CATEGORÍAS SOCIOMÉTRICAS (pie chart)
-    //----------------------------------------------------------------
-    destroyPdfChart("chart-categorias");
-const canvas3 = document.getElementById("chart-categorias");
-canvas3.width = 600;
-canvas3.height = 300;
-    pdfCharts["chart-categorias"] = new Chart(
-        document.getElementById("chart-categorias").getContext("2d"),
-        {
-            type: "pie",
-            data: {
-                labels: catLabels,
-                datasets: [{
-                    data: catValues,
-                    backgroundColor: [
-                        "#3fb950",
-                        "#f85149",
-                        "#7d8590",
-                        "#d29922",
-                        "#58a6ff",
-                        "#bc8cff"
-                    ]
-                }]
-            },
-            options: {
-                responsive: false,
-                plugins: { legend: { labels: { color: "#fff" }}}
-            }
-        }
-    );
-
-    //----------------------------------------------------------------
-    // GRÁFICA 4 — PERFIL GLOBAL (radar)
-    //----------------------------------------------------------------
-    destroyPdfChart("chart-radar");
-const canvas4 = document.getElementById("chart-radar");
-canvas4.width = 600;
-canvas4.height = 300;
-    pdfCharts["chart-radar"] = new Chart(
-        document.getElementById("chart-radar").getContext("2d"),
-        {
-            type: "radar",
-            data: {
-                labels: [
-                    "TL positivos",
-                    "TL negativos",
-                    "TG positivos",
-                    "TG negativos",
-                    "Recíprocas",
-                    "Densidad (%)"
-                ],
-                datasets: [{
-                    label: "Perfil grupal",
-                    data: [
-                        perfil.tl_pos,
-                        perfil.tl_neg,
-                        perfil.tg_pos,
-                        perfil.tg_neg,
-                        perfil.recip,
-                        perfil.densidad
-                    ],
-                    backgroundColor: "rgba(88,166,255,0.2)",
-                    borderColor: "#58a6ff",
-                    borderWidth: 2,
-                    pointBackgroundColor: "#58a6ff"
-                }]
-            },
-            options: {
-                responsive: false,
-                scales: {
-                    r: {
-                        grid: { color: "rgba(255,255,255,0.2)" },
-                        pointLabels: { color: "#fff" },
-                        ticks: { color: "#fff" }
-                    }
-                },
-                plugins: {
-                    legend: { labels: { color: "#fff" }}
-                }
-            }
-        }
-    );
-}
-``
-
-  // Renderizar realmente las gráficas
-  await renderGraficasAnexo();
-
-  // Convertir los canvas en PNG
-  const acept = document.getElementById("chart-top-acept").toDataURL("image/png");
-  const rech  = document.getElementById("chart-top-rech").toDataURL("image/png");
-  const cat   = document.getElementById("chart-categorias").toDataURL("image/png");
-  const radar = document.getElementById("chart-radar").toDataURL("image/png");
-
-  return { acept, rech, cat, radar };
-}
-
-/* ------------------------------------------------------------
-   2. CREAR PDF PROFESIONAL CON PDF-LIB
-   ------------------------------------------------------------ */
-//----------------------------------------------
-// FUNCIÓN PARA ESCRIBIR PÁRRAFOS CON SALTO
-//----------------------------------------------
-function drawParagraph(page, text, x, y, font, size, maxWidth, lineHeight) {
-    const words = text.split(" ");
-    let line = "";
-
-    for (let w = 0; w < words.length; w++) {
-        const testLine = line + words[w] + " ";
-        const width = font.widthOfTextAtSize(testLine, size);
-
-        if (width > maxWidth) {
-            page.drawText(line, { x, y, size, font });
-            line = words[w] + " ";
-            y -= lineHeight;
-
-            if (y < 60) {
-                page = page.doc.addPage([595, 842]);
-                y = 800;
-            }
-        } else {
-            line = testLine;
-        }
-    }
-
-    page.drawText(line, { x, y, size, font });
-    return { page, y };
-}
-
-//-------------------------------------------------
-// FUNCIÓN PRINCIPAL PARA CREAR EL PDF REAL
-//-------------------------------------------------
-async function descargarPDF_REAL() {
-
-    if (!informeTexto) {
-        showToast("Primero genera el informe.");
-        return;
-    }
-
-    const { PDFDocument, StandardFonts, rgb } = PDFLib;
-    const charts = await generarGraficasEstadisticas();
-
-    const pdf = await PDFDocument.create();
-    let page = pdf.addPage([595, 842]);
-    const font = await pdf.embedFont(StandardFonts.Helvetica);
-
-    let y = 800;
-
-    //----------------------------------------------
-    // CABECERA
-    //----------------------------------------------
-    page.drawText("Informe Sociométrico", {
-        x: 50,
-        y,
-        size: 22,
-        font,
-        color: rgb(0.1, 0.25, 0.36)
+        children
+      }]
     });
 
-    y -= 40;
-
-    const fecha = new Date().toLocaleDateString("es-ES");
-
-    page.drawText(`Sesión: ${sesion.id} · Fecha: ${fecha}`, {
-        x: 50,
-        y,
-        size: 11,
-        font
-    });
-
-    y -= 30;
-
-    //----------------------------------------------
-    // TEXTO DEL INFORME (párrafos completos)
-    //----------------------------------------------
-    const paragraphs = informeTexto.split("\n");
-
-    for (const p of paragraphs) {
-        let result = drawParagraph(page, p.trim(), 50, y, font, 11, 480, 18);
-        page = result.page;
-        y = result.y - 10;
-
-        if (y < 80) {
-            page = pdf.addPage([595, 842]);
-            y = 800;
-        }
-    }
-
-    //----------------------------------------------
-    // NUEVA PÁGINA PARA LAS GRÁFICAS
-    //----------------------------------------------
-    let page2 = pdf.addPage([595, 842]);
-    let y2 = 780;
-
-    async function addPNG(base64, width) {
-        const png = await pdf.embedPng(base64);
-        const scale = width / png.width;
-        const height = png.height * scale;
-
-        page2.drawImage(png, {
-            x: 50,
-            y: y2 - height,
-            width,
-            height
-        });
-
-        y2 -= height + 30;
-    }
-
-    await addPNG(charts.acept, 480);
-    await addPNG(charts.rech, 480);
-    await addPNG(charts.cat, 480);
-    await addPNG(charts.radar, 480);
-
-    //----------------------------------------------
-    // DESCARGA
-    //----------------------------------------------
-    const bytes = await pdf.save();
-    const blob = new Blob([bytes], { type: "application/pdf" });
-    const a = document.createElement("a");
+    const blob = await Packer.toBlob(doc);
+    const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `Informe_sociometrico_${sesion.id}.pdf`;
+    a.download = `Informe_sociometrico_${sesionId}_${fecha.replace(/\//g,'-')}.docx`;
     a.click();
-
-    showToast("PDF REAL generado correctamente");
-}
-
- 
-function descargarDOCX() {
-  if (!informeTexto) return;
-  const contenido = `INFORME SOCIOMÉTRICO\nSesión: ${sesion?.id||''} · Fecha: ${new Date().toLocaleDateString('es-ES')}\n\n${informeTexto}`;
-  const blob = new Blob([contenido], {type:'text/plain;charset=utf-8'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `sociograma_informe_${sesion?.id||''}.txt`;
-  a.click();
-  showToast('Descargado. Ábrelo en Word y aplica formato.');
+    showToast('Informe Word generado correctamente ✓');
+  } catch(e) {
+    console.error(e);
+    showToast('Error al generar el documento: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.innerHTML = '📄 Descargar informe Word';
 }
 
 
