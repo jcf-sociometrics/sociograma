@@ -22532,6 +22532,26 @@ async function descargarDOCX() {
     let tablaLiderazgoInsertada = false;
     let tablaRechazadosInsertada = false;
 
+    // Inyecta la tabla correspondiente según el título de sección detectado
+    function inyectarTablaSegunSeccion(clean) {
+      if (/2[\.º°\s]?1[\s\.]/.test(clean) && !tablaIndicadoresInsertada) {
+        tablaIndicadoresInsertada = true;
+        children.push(spacer());
+        children.push(makeTablaIndicadores());
+        children.push(spacer());
+      } else if (/2[\.º°\s]?2[\s\.]/.test(clean) && !tablaLiderazgoInsertada) {
+        tablaLiderazgoInsertada = true;
+        children.push(spacer());
+        children.push(makeTablaLiderazgo());
+        children.push(spacer());
+      } else if (/2[\.º°\s]?4[\s\.]/.test(clean) && !tablaRechazadosInsertada) {
+        tablaRechazadosInsertada = true;
+        children.push(spacer());
+        const tbl = makeTablaRechazados();
+        if (tbl) { children.push(tbl); children.push(spacer()); }
+      }
+    }
+
     // ── Construir los nodos de Word ──────────────────────────────
     const lines = informeTexto.split('\n');
     let prevWasBlank = false;
@@ -22551,58 +22571,31 @@ async function descargarDOCX() {
       // Separadores tipo "---", "***", "___"
       if (/^[-\*_=]{3,}$/.test(line)) continue;
 
+      // Texto limpio (sin markdown exterior) — usado en todos los branches
+      const clean = stripMd(line);
+
       // Encabezados Markdown: ## Título o ### Título
       if (/^#{1,6}\s+/.test(line)) {
         const level = (line.match(/^(#{1,6})/)||[''])[0].length;
-        const clean = stripMd(line);
         children.push(heading(clean, level <= 2 ? 1 : 2));
-        // Inyectar tabla según sección
-        if (/2\.1/i.test(clean) && !tablaIndicadoresInsertada) {
-          tablaIndicadoresInsertada = true;
-          children.push(spacer());
-          children.push(makeTablaIndicadores());
-          children.push(spacer());
-        } else if (/2\.2/i.test(clean) && !tablaLiderazgoInsertada) {
-          tablaLiderazgoInsertada = true;
-          children.push(spacer());
-          children.push(makeTablaLiderazgo());
-          children.push(spacer());
-        } else if (/2\.4/i.test(clean) && !tablaRechazadosInsertada) {
-          tablaRechazadosInsertada = true;
-          children.push(spacer());
-          const tbl = makeTablaRechazados();
-          if (tbl) { children.push(tbl); children.push(spacer()); }
-        }
+        inyectarTablaSegunSeccion(clean);
         continue;
       }
 
-      // Texto limpio (sin markdown exterior)
-      const clean = stripMd(line);
-
-      // Sección principal detectada por patrón
+      // Sección principal detectada por patrón numérico o mayúsculas
       if (isSectionTitle(clean)) {
-        children.push(heading(clean, 1));
+        // Si es subsección (tiene X.Y) → heading 2, si no → heading 1
+        const nivel = isSubTitle(clean) ? 2 : 1;
+        children.push(heading(clean, nivel));
+        inyectarTablaSegunSeccion(clean);
         continue;
       }
-      if (isSubTitle(clean)) {
-        children.push(heading(clean, 2));
-        // Inyectar tabla según sección
-        if (/2\.1/i.test(clean) && !tablaIndicadoresInsertada) {
-          tablaIndicadoresInsertada = true;
-          children.push(spacer());
-          children.push(makeTablaIndicadores());
-          children.push(spacer());
-        } else if (/2\.2/i.test(clean) && !tablaLiderazgoInsertada) {
-          tablaLiderazgoInsertada = true;
-          children.push(spacer());
-          children.push(makeTablaLiderazgo());
-          children.push(spacer());
-        } else if (/2\.4/i.test(clean) && !tablaRechazadosInsertada) {
-          tablaRechazadosInsertada = true;
-          children.push(spacer());
-          const tbl = makeTablaRechazados();
-          if (tbl) { children.push(tbl); children.push(spacer()); }
-        }
+
+      // Línea en negrita que parece un título (ej: **2.1. Indicadores globales**)
+      if (/^\*{1,2}\d+[\d\.]+\s+\S/.test(line) && clean.length < 80) {
+        const nivel = /\d+\.\d+/.test(clean) ? 2 : 1;
+        children.push(heading(clean, nivel));
+        inyectarTablaSegunSeccion(clean);
         continue;
       }
 
