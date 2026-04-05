@@ -23966,7 +23966,7 @@ async function enviarRespuesta() {
   const miIdx = alumnoSesion.codigos.indexOf(alumnoCod);
   const datos = {};
 
-  let alguna = false;
+  let todasRespondidas = true;
   PREGUNTAS_SOCIO.forEach((p,pi) => {
     const elecs = [];
     const justs = [];
@@ -23975,7 +23975,7 @@ async function enviarRespuesta() {
       const j = document.getElementById(`just-${pi}-${e}`)?.value.trim()||'';
       if (v!=='') { elecs.push(parseInt(v)); justs.push(j); }
     }
-    if (elecs.length>0) alguna = true;
+    if (elecs.length===0) todasRespondidas = false;
     datos[p.id] = { elecciones: elecs, justificaciones: justs };
   });
 
@@ -23985,11 +23985,11 @@ async function enviarRespuesta() {
       const v = document.getElementById(`alu-r${ri}-${e}`)?.value;
       if (v!=='') elecs.push(parseInt(v));
     }
-    if (elecs.length>0) alguna = true;
+    if (elecs.length===0) todasRespondidas = false;
     datos[p.id] = elecs;
   });
 
-  if (!alguna) { err.textContent='Por favor, responde al menos una pregunta.'; err.style.display='block'; return; }
+  if (!todasRespondidas) { err.textContent='Por favor, responde al menos una opción en cada pregunta.'; err.style.display='block'; return; }
 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Enviando...';
