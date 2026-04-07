@@ -23318,16 +23318,22 @@ function renderFicha() {
   const cod = codigos[idx];
   const n = codigos.length;
 
-  // Calcular datos del alumno
+  // Calcular datos del alumno — separando ocio (tl) y trabajo (tg)
   const posRec = new Array(n).fill(0);
   const negRec = new Array(n).fill(0);
   let posEm = 0, negEm = 0;
-  const eligePos = [], eligeNeg = [];
-  const eligidoPor = [], rechazadoPor = [];
-  const justs = [];
+
+  // Elecciones emitidas y recibidas, separadas por contexto
+  const eligePos = { ocio: [], trabajo: [] };
+  const eligeNeg = { ocio: [], trabajo: [] };
+  const eligidoPor = { ocio: [], trabajo: [] };
+  const rechazadoPor = { ocio: [], trabajo: [] };
 
   PREGUNTAS_SOCIO.forEach((p, pi) => {
     const arr = getEleccionesPregunta(pi);
+    // Determinar contexto: ocio (tl_*) o trabajo (tg_*)
+    const contexto = p.id.startsWith('tl_') ? 'ocio' : 'trabajo';
+
     arr.forEach((elecs, i) => {
       elecs.forEach(j => {
         if (p.tipo==='pos') posRec[j]++;
@@ -23341,8 +23347,8 @@ function renderFicha() {
       const js = r[p.id].justificaciones || [];
       elecs.forEach((j, ei) => {
         const just = (js[ei]||'').trim();
-        if (p.tipo==='pos') { eligePos.push({cod:codigos[j], just}); posEm++; }
-        else { eligeNeg.push({cod:codigos[j], just}); negEm++; }
+        if (p.tipo==='pos') { eligePos[contexto].push({cod:codigos[j], just}); posEm++; }
+        else { eligeNeg[contexto].push({cod:codigos[j], just}); negEm++; }
       });
     }
     // Quién elige a este alumno
@@ -23353,8 +23359,8 @@ function renderFicha() {
         const data2 = r2 ? r2[p.id] : null;
         const eiAlumno = elecs.indexOf(idx);
         const justRecib = data2 ? ((data2.justificaciones||[])[eiAlumno]||'').trim() : '';
-        if (p.tipo==='pos') eligidoPor.push({cod:codigos[i], just:justRecib});
-        else rechazadoPor.push({cod:codigos[i], just:justRecib});
+        if (p.tipo==='pos') eligidoPor[contexto].push({cod:codigos[i], just:justRecib});
+        else rechazadoPor[contexto].push({cod:codigos[i], just:justRecib});
       }
     });
   });
@@ -23371,6 +23377,21 @@ function renderFicha() {
       ${mkChip(item.cod, color+'22', color+'44')}
       ${item.just ? `<span style="font-size:0.74rem;color:var(--muted);font-style:italic;">"${item.just}"</span>` : ''}
     </div>`;
+
+  const mkContextoSubtitulo = (label, emoji) =>
+    `<div style="font-size:0.65rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin:8px 0 4px;">${emoji} ${label}</div>`;
+
+  const mkBloque = (itemsOcio, itemsTrabajo, color, vacioTexto) => {
+    const hayOcio = itemsOcio.length > 0;
+    const hayTrabajo = itemsTrabajo.length > 0;
+    if (!hayOcio && !hayTrabajo) return `<span style="font-size:0.75rem;color:var(--muted);">${vacioTexto}</span>`;
+    return `
+      ${mkContextoSubtitulo('Ocio', '🎮')}
+      ${hayOcio ? itemsOcio.map(x=>mkJustRow(x,color)).join('') : `<span style="font-size:0.72rem;color:var(--muted);font-style:italic;">—</span>`}
+      ${mkContextoSubtitulo('Trabajo', '📚')}
+      ${hayTrabajo ? itemsTrabajo.map(x=>mkJustRow(x,color)).join('') : `<span style="font-size:0.72rem;color:var(--muted);font-style:italic;">—</span>`}
+    `;
+  };
 
   cont.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px;margin-bottom:16px;">
@@ -23402,21 +23423,21 @@ function renderFicha() {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
       <div>
         <div style="font-size:0.72rem;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Elige positivamente a:</div>
-        ${eligePos.length ? eligePos.map(x=>mkJustRow(x,'#3fb950')).join('') : '<span style="font-size:0.75rem;color:var(--muted);">Sin datos</span>'}
+        ${mkBloque(eligePos.ocio, eligePos.trabajo, '#3fb950', 'Sin datos')}
       </div>
       <div>
         <div style="font-size:0.72rem;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Rechaza a:</div>
-        ${eligeNeg.length ? eligeNeg.map(x=>mkJustRow(x,'#f85149')).join('') : '<span style="font-size:0.75rem;color:var(--muted);">Sin datos</span>'}
+        ${mkBloque(eligeNeg.ocio, eligeNeg.trabajo, '#f85149', 'Sin datos')}
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div>
         <div style="font-size:0.72rem;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Le eligen positivamente:</div>
-        ${eligidoPor.length ? eligidoPor.map(x=>mkJustRow(x,'#58a6ff')).join('') : '<span style="font-size:0.75rem;color:var(--muted);">Nadie</span>'}
+        ${mkBloque(eligidoPor.ocio, eligidoPor.trabajo, '#58a6ff', 'Nadie')}
       </div>
       <div>
         <div style="font-size:0.72rem;font-weight:700;color:var(--orange);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Le rechazan:</div>
-        ${rechazadoPor.length ? rechazadoPor.map(x=>mkJustRow(x,'#d29922')).join('') : '<span style="font-size:0.75rem;color:var(--muted);">Nadie</span>'}
+        ${mkBloque(rechazadoPor.ocio, rechazadoPor.trabajo, '#d29922', 'Nadie')}
       </div>
     </div>`;
 }
